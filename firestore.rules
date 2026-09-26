@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The only source of tenancy is the businessId custom claim set by the
+    // provisioning Cloud Function. Nothing the client sends can change it.
+    function isTenant(businessId) {
+      return request.auth != null && request.auth.token.businessId == businessId;
+    }
+
+    function isNum(v) { return v is int || v is float; }
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function isText(v, max) { return v is string && v.size() <= max; }
+    function isOptText(v, max) { return v == null || isText(v, max); }
+    function isOptDate(v) { return v == null || isDate(v); }
+    function exactKeys(d, keys) { return d.keys().hasAll(keys) && d.keys().hasOnly(keys); }
+    function changedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    match /businesses/{businessId} {
+      allow read: if isTenant(businessId);
+      // Created by the provisioning function (Admin SDK). The owner may edit
+      // only display fields; ownerUid and subscriptionStatus are server-owned.
+      allow update: if isTenant(businessId)
+        && changedOnly(['name', 'phone'])
+        && isText(request.resource.data.name, 120)
+        && isText(request.resource.data.phone, 30);
+
+
+      match /vendors/{vendorId} {
+        allow read: if isTenant(businessId);
+        allow create: if isTenant(businessId)
+          && exactKeys(request.resource.data, ['name', 'phone', 'notes', 'createdAt'])
+          && isText(request.resource.data.name, 120) && request.resource.data.name.size() > 0
+          && isText(request.resource.data.phone, 30)
+          && isText(request.resource.data.notes, 2000)
+          && request.resource.data.createdAt == request.time;
+        // name is denormalized onto orders/payments, so it is fixed after
+        // creation; linkToken is managed by the vendor-link functions.
+        allow update: if isTenant(businessId)
+          && changedOnly(['phone', 'notes'])
+          && isText(request.resource.data.phone, 30)
+          && isText(request.resource.data.notes, 2000);
+      }
+
+      function validOrder(d) {
+        return exactKeys(d, ['vendorId', 'vendorName', 'description', 'qty', 'rate', 'amount',
+                             'orderDate', 'status', 'invoiceAmount', 'invoiceDate', 'createdAt'])
+          && d.vendorId is string
+          && exists(/databases/$(database)/documents/businesses/$(businessId)/vendors/$(d.vendorId))
+          && isText(d.vendorName, 120)
+          && isText(d.description, 500) && d.description.size() > 0
+          && isNum(d.qty) && d.qty > 0
+          && isNum(d.rate) && d.rate >= 0
+          // The stored total can never disagree with qty * rate.
+          && d.amount == d.qty * d.rate
+          && isDate(d.orderDate)
+          && d.status in ['ordered', 'confirmed', 'received']
+          && (d.invoiceAmount == null || (isNum(d.invoiceAmount) && d.invoiceAmount >= 0))
+          && isOptDate(d.invoiceDate)
+          && d.createdAt is timestamp;
+      }
+
+      match /orders/{orderId} {
+        allow read, delete: if isTenant(businessId);
+        allow create: if isTenant(businessId)
+          && validOrder(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        allow update: if isTenant(businessId)
+          && validOrder(request.resource.data)
+          && request.resource.data.vendorId == resource.data.vendorId
+          && request.resource.data.createdAt == resource.data.createdAt;
+      }
+
+      function validPayment(d) {
+        return exactKeys(d, ['orderId', 'vendorId', 'vendorName', 'amount', 'method', 'date',
+                             'bankAccount', 'bankRef',
+                             'chequeNo', 'chequeBank', 'chequeDate', 'clearedStatus', 'clearedDate',
+                             'cashTo', 'createdAt'])
+          && isNum(d.amount) && d.amount > 0
+          && isDate(d.date)
+          && d.method in ['bank', 'cheque', 'cash']
+          && isOptText(d.bankAccount, 120) && isOptText(d.bankRef, 120)
+          && isOptText(d.chequeNo, 60) && isOptText(d.chequeBank, 120) && isOptDate(d.chequeDate)
+          && isOptDate(d.clearedDate)
+          && isOptText(d.cashTo, 120)
+          && (d.method == 'cheque'
+                ? d.clearedStatus in ['issued', 'cleared'] && isText(d.chequeNo, 60)
+                : d.clearedStatus == null);
+      }
+
+      match /payments/{paymentId} {
+        allow read, delete: if isTenant(businessId);
+        // A payment must point at an existing order of this business, and
+        // its vendor must be that order's vendor.
+        allow create: if isTenant(businessId)
+          && validPayment(request.resource.data)
+          && request.resource.data.clearedStatus != 'cleared'
+          && request.resource.data.orderId is string
+          && request.resource.data.vendorId
+               == get(/databases/$(database)/documents/businesses/$(businessId)/orders/$(request.resource.data.orderId)).data.vendorId
+          && request.resource.data.createdAt == request.time;
+        // The only in-place edit is clearing a cheque.
+        allow update: if isTenant(businessId)
+          && changedOnly(['clearedStatus', 'clearedDate'])
+          && validPayment(request.resource.data)
+          && resource.data.method == 'cheque';
+      }
+
+      // Append-only edit history.
+      match /auditLog/{entryId} {
+        allow read: if isTenant(businessId);
+        allow create: if isTenant(businessId)
+          && request.resource.data.editedBy == request.auth.uid
+          && request.resource.data.editedAt == request.time
+          && request.resource.data.entity in ['vendor', 'order', 'payment'];
+      }
+    }
+
+    // vendorLinks/{token} is written and resolved only by Cloud Functions via
+    // the Admin SDK (which bypasses these rules). No client path exists:
+    // everything not matched above is denied by default.
+  }
+}
