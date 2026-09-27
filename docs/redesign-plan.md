@@ -1,6 +1,6 @@
 # LedgerTrail redesign plan
 
-_Written 2026-09-27. Start here on the next development day._
+_Written 2026-09-27. For where the last session ended and what to do next, see `docs/session-notes.md`._
 
 ## Why
 
