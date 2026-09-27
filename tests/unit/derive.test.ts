@@ -8,7 +8,7 @@ import type { Order, OrderItem, Payment, Vendor } from "@/lib/types";
 const ts = (ms: number) => ({ toMillis: () => ms }) as unknown as Order["createdAt"];
 
 const item = (i: Partial<OrderItem> = {}): OrderItem => ({
-  name: "Steel rods", qty: 1, unit: "pcs", rate: 100, amount: 100, ...i,
+  name: "Steel rods", qty: 1, rate: 100, amount: 100, ...i,
 });
 
 function order(o: Partial<Order> & Pick<Order, "id">): Order {
@@ -271,12 +271,12 @@ describe("methodLabel", () => {
 });
 
 describe("messages", () => {
-  it("orderMessage lists every item with its unit", () => {
+  it("orderMessage lists every item", () => {
     const o = order({
       id: "o1", number: 7, amount: 72_800.3, expectedDate: "2026-09-30", note: "Deliver to site 2",
       items: [
-        item({ name: "Cement", qty: 50, unit: "bag", rate: 1450, amount: 72_500 }),
-        item({ name: "Binding wire", qty: 3, unit: "kg", rate: 100.1, amount: 300.3 }),
+        item({ name: "Cement", qty: 50, rate: 1450, amount: 72_500 }),
+        item({ name: "Binding wire", qty: 3, rate: 100.1, amount: 300.3 }),
       ],
     });
     expect(orderMessage(o, "Faiz Traders")).toBe(
@@ -286,8 +286,8 @@ describe("messages", () => {
         "Date: 2026-09-01",
         "Deliver by: 2026-09-30",
         "",
-        "1. Cement — 50 bag × Rs 1,450 = Rs 72,500",
-        "2. Binding wire — 3 kg × Rs 100.1 = Rs 300.3",
+        "1. Cement — 50 × Rs 1,450 = Rs 72,500",
+        "2. Binding wire — 3 × Rs 100.1 = Rs 300.3",
         "",
         "*Total: Rs 72,800.3*",
         "Note: Deliver to site 2",
@@ -304,11 +304,11 @@ describe("messages", () => {
       order({
         id: "o2", number: 2, orderDate: "2026-09-10", amount: 100, invoiceAmount: 110,
         invoiceNo: "B-9", invoiceDate: "2026-09-11",
-        items: [item({ name: "Bricks", qty: 2, unit: "pcs", rate: 50, amount: 100 })],
+        items: [item({ name: "Bricks", qty: 2, rate: 50, amount: 100 })],
       }),
       order({
         id: "o1", number: 1, orderDate: "2026-09-01", amount: 200, invoiceAmount: 200,
-        items: [item({ name: "Cement", qty: 1, unit: "bag", rate: 200, amount: 200 })],
+        items: [item({ name: "Cement", qty: 1, rate: 200, amount: 200 })],
       }),
       order({ id: "ox", vendorId: "v2" }),
     ];
@@ -325,10 +325,10 @@ describe("messages", () => {
         "",
         "*Orders*",
         "2026-09-01 · PO-0001 · Rs 200 (ordered)",
-        "   Cement: 1 bag × Rs 200",
+        "   Cement: 1 × Rs 200",
         "   Bill: Rs 200",
         "2026-09-10 · PO-0002 · Rs 100 (ordered)",
-        "   Bricks: 2 pcs × Rs 50",
+        "   Bricks: 2 × Rs 50",
         "   Bill #B-9: Rs 110 on 2026-09-11 ⚠ differs from order",
         "Total ordered: Rs 300",
         "",

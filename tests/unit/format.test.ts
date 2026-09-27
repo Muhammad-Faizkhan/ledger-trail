@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  amountsDiffer, daysBetween, isIsoDate, itemsSummary, money, num, parseNonNegativeNumber, poNumber, qtyUnit,
+  amountsDiffer, daysBetween, isIsoDate, itemsSummary, money, num, parseNonNegativeNumber, poNumber,
   parsePositiveNumber, round2, today, whatsAppNumber, whatsAppUrl,
 } from "@/lib/format";
 
@@ -113,10 +113,5 @@ describe("order labels", () => {
     expect(itemsSummary([{ name: "Cement" }])).toBe("Cement");
     expect(itemsSummary([{ name: "Cement" }, { name: "Steel" }])).toBe("Cement, Steel");
     expect(itemsSummary([{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }])).toBe("A, B +2 more");
-  });
-
-  it("qtyUnit", () => {
-    expect(qtyUnit(50, "bag")).toBe("50 bag");
-    expect(qtyUnit(2.5, "")).toBe("2.5");
   });
 });

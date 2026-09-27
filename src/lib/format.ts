@@ -88,8 +88,3 @@ export function itemsSummary(items: { name: string }[]): string {
   const shown = items.slice(0, 2).map((i) => i.name).join(", ");
   return items.length > 2 ? `${shown} +${items.length - 2} more` : shown;
 }
-
-/** "50 bag", "2.5 ton". */
-export function qtyUnit(qty: number, unit: string): string {
-  return unit ? `${num(qty)} ${unit}` : num(qty);
-}

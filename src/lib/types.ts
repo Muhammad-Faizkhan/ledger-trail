@@ -24,7 +24,6 @@ export interface Vendor {
 export interface OrderItem {
   name: string;
   qty: number;
-  unit: string;
   rate: number;
   /** round2(qty * rate), computed by the saveOrder function. */
   amount: number;
@@ -74,7 +73,6 @@ export interface Payment {
 export interface CatalogItem {
   id: string;
   name: string;
-  unit: string;
   lastRate: number;
   updatedAt: Timestamp | null;
 }
@@ -91,5 +89,3 @@ export interface AuditEntry {
 }
 
 export const ORDER_STATUSES: OrderStatus[] = ["ordered", "confirmed", "received"];
-
-export const UNITS = ["bag", "ton", "kg", "pcs", "ft", "sq ft", "litre", "box", "dozen", "truck"];

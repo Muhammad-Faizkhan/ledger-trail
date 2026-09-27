@@ -43,18 +43,18 @@ async function main() {
   const bricks = await vendor("Punjab Bricks", "");
 
   const save = httpsCallable<Record<string, unknown>, { id: string }>(fns, "saveOrder");
-  const order = async (vendorId: string, days: number, items: [string, number, string, number][], extra: Record<string, unknown> = {}) =>
+  const order = async (vendorId: string, days: number, items: [string, number, number][], extra: Record<string, unknown> = {}) =>
     (await save({
       vendorId, orderDate: daysAgo(days), expectedDate: null, status: "ordered",
       invoiceAmount: null, invoiceNo: null, invoiceDate: null, note: "",
-      items: items.map(([name, qty, unit, rate]) => ({ name, qty, unit, rate })), ...extra,
+      items: items.map(([name, qty, rate]) => ({ name, qty, rate })), ...extra,
     })).data.id;
 
-  const o1 = await order(cement, 45, [["Cement", 200, "bag", 1400]], { status: "received", invoiceAmount: 280_000, invoiceNo: "LC-881", invoiceDate: daysAgo(44) });
-  await order(cement, 12, [["Cement", 100, "bag", 1450], ["White cement", 10, "bag", 2200]], { status: "confirmed", expectedDate: daysAgo(3) });
-  await order(steel, 20, [["Steel bars 12mm", 2, "ton", 265_000], ["Steel bars 10mm", 1.5, "ton", 268_000], ["Binding wire", 25, "kg", 420]],
+  const o1 = await order(cement, 45, [["Cement", 200, 1400]], { status: "received", invoiceAmount: 280_000, invoiceNo: "LC-881", invoiceDate: daysAgo(44) });
+  await order(cement, 12, [["Cement", 100, 1450], ["White cement", 10, 2200]], { status: "confirmed", expectedDate: daysAgo(3) });
+  await order(steel, 20, [["Steel bars 12mm", 2, 265_000], ["Steel bars 10mm", 1.5, 268_000], ["Binding wire", 25, 420]],
     { status: "received", invoiceAmount: 944_500, invoiceNo: "AS-2231", invoiceDate: daysAgo(18) });
-  await order(bricks, 2, [["Bricks A-class", 5000, "pcs", 18]], { expectedDate: daysAgo(-3), note: "Deliver to site 2" });
+  await order(bricks, 2, [["Bricks A-class", 5000, 18]], { expectedDate: daysAgo(-3), note: "Deliver to site 2" });
 
   const pay = (vendorId: string, vendorName: string, amount: number, days: number, method: Record<string, unknown>, orderId: string | null = null) =>
     addDoc(collection(db, base, "payments"), {

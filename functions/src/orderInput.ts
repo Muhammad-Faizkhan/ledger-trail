@@ -10,7 +10,6 @@ export class InputError extends Error {}
 export interface OrderItemInput {
   name: string;
   qty: number;
-  unit: string;
   rate: number;
   amount: number;
 }
@@ -49,7 +48,7 @@ function optText(v: unknown, max: number, what: string): string | null {
 
 const round3 = (n: number) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 
-/** Quantities keep 3 decimals (2.125 ton); money keeps 2. */
+/** Quantities keep 3 decimals (2.125); money keeps 2. */
 function number(v: unknown, what: string, { allowZero, decimals }: { allowZero: boolean; decimals: 2 | 3 }): number {
   if (typeof v !== "number" || !Number.isFinite(v)) throw new InputError(`${what} must be a number.`);
   if (allowZero ? v < 0 : v <= 0) throw new InputError(allowZero ? `${what} can't be negative.` : `${what} must be more than 0.`);
@@ -85,7 +84,6 @@ export function parseOrderInput(data: unknown): OrderInput {
     return {
       name: text(it.name, 120, `${row} name`, true),
       qty,
-      unit: text(it.unit, 20, `${row} unit`),
       rate,
       amount: round2(qty * rate),
     };
@@ -120,5 +118,5 @@ export function catalogKey(name: string): string {
 
 /** One line per item, for edit history. */
 export function itemsText(items: OrderItemInput[]): string {
-  return items.map((it) => `${it.name} ${it.qty}${it.unit ? ` ${it.unit}` : ""} × ${it.rate}`).join("; ");
+  return items.map((it) => `${it.name} ${it.qty} × ${it.rate}`).join("; ");
 }

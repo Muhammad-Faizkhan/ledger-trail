@@ -4,7 +4,7 @@
 // with an auditLog entry per changed field, so history can't drift from data.
 // Orders go through Cloud Functions, which do the same on the server.
 import {
-  addDoc, collection, doc, serverTimestamp, updateDoc, writeBatch, type WriteBatch,
+  addDoc, collection, doc, serverTimestamp, setDoc, updateDoc, writeBatch, type WriteBatch,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { methodLabel } from "@/lib/derive";
@@ -43,11 +43,14 @@ export function updateBusiness(businessId: string, changes: { name: string; phon
   return updateDoc(doc(db, "businesses", businessId), changes);
 }
 
-export async function addVendor(businessId: string, v: { name: string; phone: string }): Promise<string> {
-  const ref = await addDoc(col(businessId, "vendors"), {
-    name: v.name.trim(), phone: v.phone.trim(), notes: "", createdAt: serverTimestamp(),
-  });
-  return ref.id;
+/**
+ * The new vendor's id is known right away, so the caller can use it without
+ * waiting for the server (slow on a phone). `saved` settles once the server has it.
+ */
+export function addVendor(businessId: string, v: { name: string; phone: string }): { id: string; saved: Promise<void> } {
+  const ref = doc(col(businessId, "vendors"));
+  const saved = setDoc(ref, { name: v.name.trim(), phone: v.phone.trim(), notes: "", createdAt: serverTimestamp() });
+  return { id: ref.id, saved };
 }
 
 export async function updateVendor(
@@ -62,7 +65,7 @@ export async function updateVendor(
 export interface OrderDraft {
   orderId?: string;
   vendorId: string;
-  items: { name: string; qty: number; unit: string; rate: number }[];
+  items: { name: string; qty: number; rate: number }[];
   orderDate: string;
   expectedDate: string | null;
   status: Order["status"];
@@ -76,7 +79,7 @@ export interface OrderDraft {
 export function draftOf(o: Order): OrderDraft {
   return {
     orderId: o.id, vendorId: o.vendorId,
-    items: o.items.map(({ name, qty, unit, rate }) => ({ name, qty, unit, rate })),
+    items: o.items.map(({ name, qty, rate }) => ({ name, qty, rate })),
     orderDate: o.orderDate, expectedDate: o.expectedDate, status: o.status,
     invoiceAmount: o.invoiceAmount, invoiceNo: o.invoiceNo, invoiceDate: o.invoiceDate, note: o.note,
   };

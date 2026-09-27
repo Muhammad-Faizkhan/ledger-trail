@@ -1,6 +1,6 @@
 // Pure derived views over stored data. Every figure the UI shows comes from
 // here (or straight from stored fields) — nothing is re-typed.
-import { amountsDiffer, daysBetween, itemsSummary, money, poNumber, qtyUnit, round2 } from "./format";
+import { amountsDiffer, daysBetween, itemsSummary, money, num, poNumber, round2 } from "./format";
 import type { Order, Payment, Vendor } from "./types";
 
 export const OVERDUE_DAYS = 30;
@@ -237,7 +237,7 @@ export function orderMessage(order: Order, businessName: string): string {
   if (order.expectedDate) lines.push(`Deliver by: ${order.expectedDate}`);
   lines.push("");
   order.items.forEach((it, i) => {
-    lines.push(`${i + 1}. ${it.name} — ${qtyUnit(it.qty, it.unit)} × ${money(it.rate)} = ${money(it.amount)}`);
+    lines.push(`${i + 1}. ${it.name} — ${num(it.qty)} × ${money(it.rate)} = ${money(it.amount)}`);
   });
   lines.push("", `*Total: ${money(order.amount)}*`);
   if (order.note) lines.push(`Note: ${order.note}`);
@@ -267,7 +267,7 @@ export function vendorStatement(
   if (vOrders.length === 0) lines.push("None");
   for (const o of vOrders) {
     lines.push(`${o.orderDate} · ${poNumber(o.number)} · ${money(o.amount)} (${o.status})`);
-    for (const it of o.items) lines.push(`   ${it.name}: ${qtyUnit(it.qty, it.unit)} × ${money(it.rate)}`);
+    for (const it of o.items) lines.push(`   ${it.name}: ${num(it.qty)} × ${money(it.rate)}`);
     if (o.invoiceAmount != null) {
       const flag = amountsDiffer(o.invoiceAmount, o.amount) ? " ⚠ differs from order" : "";
       const no = o.invoiceNo ? ` #${o.invoiceNo}` : "";

@@ -26,12 +26,13 @@ use all day on a phone without thinking about it.
 
 1. **Payments:** a lump sum against the vendor's account, applied to the oldest unpaid
    orders first. A payment can still be pinned to one order.
-2. **Saved item list:** yes. Items keep their unit and last rate, so typing "cem" fills
-   in "Cement · bag · Rs 1,450".
+2. **Saved item list:** yes. Items keep their last rate, so typing "cem" fills in
+   "Cement · Rs 1,450".
 3. **Order numbers:** `PO-0001` per business, counting up, never reused, even after a
    delete.
-4. **Units:** bag, ton, kg, pcs, ft, sq ft, litre, box, dozen, truck. The field also
-   accepts free text.
+4. **Units: dropped (2026-09-27).** The owner asked to remove the unit box from the
+   order screen, so items are just name, quantity and rate. Put a unit in the item name
+   when it matters ("Cement bag", "Sand truck").
 
 ## Ease of use comes first
 
@@ -45,7 +46,7 @@ pass these rules before it's done:
   or "orphan".
 - **Show the result before saving.** The order total, and which bills a payment clears,
   are visible while typing.
-- **Fewer fields.** Sensible defaults (today's date, the last unit and rate, "ordered"),
+- **Fewer fields.** Sensible defaults (today's date, the last rate, "ordered"),
   and optional details folded under "More details".
 - **Short pages.** Tabs instead of one long scroll; lists show about 20 rows with search.
 - **Every empty screen says what to do next.**
@@ -81,7 +82,6 @@ interface Order {
 interface OrderItem {
   name: string;
   qty: number;
-  unit: string;   // "bag", "ton", …
   rate: number;
   amount: number; // qty * rate
 }
@@ -97,7 +97,7 @@ interface OrderItem {
 - All the bank / cheque / cash fields stay as they are.
 
 **Item catalog** (only if decision 2 is yes), `businesses/{id}/items/{itemId}`:
-`{ name, unit, lastRate, updatedAt }`. It updates automatically when an order is saved.
+`{ name, lastRate, updatedAt }`. It updates automatically when an order is saved.
 
 ### Where orders get created: move to a Cloud Function
 
@@ -126,7 +126,7 @@ Payments**, plus a large **＋ New order** button that's always visible.
 | Screen | Route | What's on it |
 |--------|-------|--------------|
 | Home | `/` | Totals you owe, "Needs attention", orders expected today or overdue, recent activity |
-| New order | `/orders/new` (also opens as a sheet from anywhere) | Vendor picker (search, or add a new vendor inline) → item rows (item, qty, unit, rate, amount) → live total → date, expected date, note → **Save** or **Save & send on WhatsApp** |
+| New order | `/orders/new` (also opens as a sheet from anywhere) | Vendor picker (search, or add a new vendor inline) → item rows (item, qty, rate, amount) → live total → date, expected date, note → **Save** or **Save & send on WhatsApp** |
 | Orders | `/orders` | All orders with search (PO number, vendor, item). Filters: Open / To receive / Unpaid / All. Status chips. Tap to open |
 | Order detail | `/orders/[id]` | Items table, status steps (ordered → confirmed → received), invoice (number, amount, date, mismatch warning), payments applied to it, Edit / Delete, Print / Share |
 | Vendors | `/vendors` | Search, balance per vendor, sort by highest balance |
@@ -135,7 +135,7 @@ Payments**, plus a large **＋ New order** button that's always visible.
 | Record payment | sheet | Vendor → amount → method details → "Apply to: oldest unpaid first ▾ / specific order" → preview of which orders it clears |
 | Print views | `/orders/[id]/print`, `/vendors/[id]/statement` | Clean A4 / mobile layout with the business name; browser "Save as PDF"; WhatsApp share |
 | History | `/history` | Already built; add filters for entity and date |
-| Settings | `/settings` | Business name and phone (moved from the dashboard), units list, sign out |
+| Settings | `/settings` | Business name and phone (moved from the dashboard), sign out |
 
 ### Look and feel
 
@@ -146,7 +146,7 @@ Payments**, plus a large **＋ New order** button that's always visible.
 - Status colours used the same way everywhere: ordered = grey, confirmed = blue,
   received = green, overdue or mismatch = red.
 - Forms: number keypad for quantities and amounts; Enter moves to the next item row;
-  the last unit and rate are remembered per item.
+  the last rate is remembered per item.
 - Empty states that say what to do next ("No orders yet — tap ＋ New order").
 - Urdu labels are out of scope for now, but all UI text should be kept in one place so
   they can be added later.
@@ -185,7 +185,7 @@ Each phase ends with the tests passing and a commit.
 
 ### Phase 3 — New order flow
 - [x] Vendor picker with search and inline "add vendor".
-- [x] Item rows with units, live totals and the catalog autocomplete (if decision 2 is yes).
+- [x] Item rows, live totals and the catalog autocomplete.
 - [x] Save, and Save & send on WhatsApp (formatted multi-item message with the PO number).
 
 ### Phase 4 — Orders
@@ -226,8 +226,6 @@ Phases 0–6 are built. Phase 7 (going live) is next and needs the owner to enab
 
 **Not done yet:**
 - UI text is not collected in one file yet (needed before adding Urdu).
-- Settings has no units list; units are fixed in `UNITS` (`src/lib/types.ts`) and
-  the unit box also accepts free text.
 - History has entity filters but no date filter.
 
 **Code map:**
@@ -237,7 +235,7 @@ Phases 0–6 are built. Phase 7 (going live) is next and needs the owner to enab
   (`functions/src/index.ts`, input checks in `functions/src/orderInput.ts`).
 - Which bills each payment paid is worked out by `allocatePayments` in
   `src/lib/derive.ts`; nothing about it is stored.
-- **Tests:** 54 unit, 12 rules, 7 e2e. Tests need Java 21: set `JAVA_HOME` to
+- **Tests:** 53 unit, 12 rules, 7 e2e. Tests need Java 21: set `JAVA_HOME` to
   `C:Program FilesMicrosoftjdk-21.0.12.101-hotspot` if a terminal still picks up 17.
 - **Firebase:** the local emulators (`demo-ledgertrail`) are what `npm run dev` uses.
   The live project is `ledgertrailer` (alias `live`), with its web config in

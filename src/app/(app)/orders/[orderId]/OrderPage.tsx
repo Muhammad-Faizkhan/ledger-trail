@@ -76,7 +76,7 @@ export function OrderPage({ orderId }: { orderId: string }) {
                   <span className="font-medium">{it.name}</span>
                   <span className="block text-xs text-muted sm:hidden">@ {money(it.rate)}</span>
                 </td>
-                <td className="whitespace-nowrap py-2 text-right tabular-nums">{num(it.qty)} {it.unit}</td>
+                <td className="whitespace-nowrap py-2 text-right tabular-nums">{num(it.qty)}</td>
                 <td className="hidden whitespace-nowrap py-2 text-right tabular-nums sm:table-cell">{money(it.rate)}</td>
                 <td className="whitespace-nowrap py-2 pl-2 text-right font-medium tabular-nums">{money(it.amount)}</td>
               </tr>

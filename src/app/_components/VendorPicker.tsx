@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Vendor } from "@/lib/types";
 import { useSession } from "./Gate";
-import { Button, ErrorText, Field, useAction } from "./ui";
+import { Button, ErrorText, Field, friendlyError } from "./ui";
 import { addVendor } from "./writes";
 
 /**
@@ -22,7 +22,7 @@ export function VendorPicker({ value, onChange, allowAdd, locked, label = "Vendo
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
   const [phone, setPhone] = useState("");
-  const { busy, error, run } = useAction();
+  const [error, setError] = useState("");
   const selected = value ? ledger.vendors.find((v) => v.id === value) : undefined;
 
   if (value) {
@@ -39,6 +39,7 @@ export function VendorPicker({ value, onChange, allowAdd, locked, label = "Vendo
             <Button variant="ghost" className="shrink-0" onClick={() => { onChange(null); setQuery(""); }}>Change</Button>
           )}
         </div>
+        <ErrorText>{error}</ErrorText>
       </div>
     );
   }
@@ -51,13 +52,18 @@ export function VendorPicker({ value, onChange, allowAdd, locked, label = "Vendo
     .slice(0, 8);
   const exact = ledger.vendors.some((v) => v.name.trim().toLowerCase() === q);
 
-  async function add() {
-    await run(async () => {
-      const id = await addVendor(businessId, { name: query, phone });
-      setAdding(false);
-      setPhone("");
-      onChange(id);
+  // Chosen straight away; the save finishes in the background. If the server
+  // turns it down, un-choose it so an order can't point at a missing vendor.
+  function add() {
+    setError("");
+    const { id, saved } = addVendor(businessId, { name: query, phone });
+    saved.catch((err) => {
+      setError(`Couldn't add ${query.trim()}: ${friendlyError(err)}`);
+      onChange(null);
     });
+    setAdding(false);
+    setPhone("");
+    onChange(id);
   }
 
   return (
@@ -100,10 +106,10 @@ export function VendorPicker({ value, onChange, allowAdd, locked, label = "Vendo
           <p className="font-semibold">New vendor: {query.trim()}</p>
           <Field label="Phone / WhatsApp (optional)" type="tel" maxLength={30} autoFocus value={phone}
             onChange={(e) => setPhone(e.target.value)} placeholder="0300 1234567"
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void add(); } }} />
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }} />
           <ErrorText>{error}</ErrorText>
           <div className="flex gap-2">
-            <Button disabled={busy} onClick={add}>{busy ? "Adding…" : "Add vendor"}</Button>
+            <Button onClick={add}>Add vendor</Button>
             <Button variant="secondary" onClick={() => setAdding(false)}>Cancel</Button>
           </div>
         </div>

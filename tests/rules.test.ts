@@ -25,7 +25,7 @@ const dbAnon = () => env.unauthenticatedContext().firestore() as unknown as Fire
 
 const order = (over: Record<string, unknown> = {}) => ({
   number: 1, vendorId: "v1", vendorName: "Vendor One",
-  items: [{ name: "Cotton", qty: 200, unit: "yd", rate: 12.5, amount: 2500 }],
+  items: [{ name: "Cotton", qty: 200, rate: 12.5, amount: 2500 }],
   amount: 2500, orderDate: "2026-09-01", expectedDate: null, status: "ordered",
   invoiceAmount: null, invoiceNo: null, invoiceDate: null, note: "", createdAt: serverTimestamp(), ...over,
 });
@@ -122,7 +122,7 @@ describe("data validation", () => {
 
     await assertSucceeds(getDocs(collection(dbA(), `businesses/${A}/items`)));
     await assertFails(getDocs(collection(dbB(), `businesses/${A}/items`)));
-    await assertFails(setDoc(doc(dbA(), `businesses/${A}/items/cement`), { name: "Cement", unit: "bag", lastRate: 1 }));
+    await assertFails(setDoc(doc(dbA(), `businesses/${A}/items/cement`), { name: "Cement", lastRate: 1 }));
   });
 
   it("the PO counter has no client access at all", async () => {

@@ -51,7 +51,7 @@ export function PrintOrder({ orderId }: { orderId: string }) {
             <tr key={i}>
               <td>{i + 1}</td>
               <td>{it.name}</td>
-              <td className="text-right tabular-nums">{num(it.qty)} {it.unit}</td>
+              <td className="text-right tabular-nums">{num(it.qty)}</td>
               <td className="text-right tabular-nums">{money(it.rate)}</td>
               <td className="text-right tabular-nums">{money(it.amount)}</td>
             </tr>

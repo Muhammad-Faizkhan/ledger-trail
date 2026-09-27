@@ -139,7 +139,7 @@ export const saveOrder = onCall(async (req) => {
     for (const it of input.items) {
       const id = createHash("sha1").update(catalogKey(it.name)).digest("hex").slice(0, 20);
       tx.set(biz.collection("items").doc(id), {
-        name: it.name, unit: it.unit, lastRate: it.rate, updatedAt: FieldValue.serverTimestamp(),
+        name: it.name, lastRate: it.rate, updatedAt: FieldValue.serverTimestamp(),
       });
     }
     return { id: orderRef.id, number };

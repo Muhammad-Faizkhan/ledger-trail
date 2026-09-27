@@ -29,7 +29,10 @@ export const db = getFirestore(app);
 export const functions = getFunctions(app);
 
 if (usingEmulators && fresh) {
-  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
-  connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+  // The emulators run on the dev machine. Reach them at whatever address the app
+  // was opened from, so a phone on the same Wi-Fi (http://192.168.x.x:3000) works too.
+  const host = typeof window === "undefined" ? "127.0.0.1" : window.location.hostname;
+  connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
+  connectFirestoreEmulator(db, host, 8080);
+  connectFunctionsEmulator(functions, host, 5001);
 }

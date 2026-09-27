@@ -81,8 +81,9 @@ function AddVendor({ onDone }: { onDone: () => void }) {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    let id = "";
-    if (await run(async () => { id = await addVendor(businessId, { name, phone }); })) {
+    // Open the new vendor straight away; the save finishes in the background.
+    const { id, saved } = addVendor(businessId, { name, phone });
+    if (await run(() => Promise.race([saved, new Promise((r) => setTimeout(r, 300))]))) {
       onDone();
       router.push(`/vendors/${id}`);
     }

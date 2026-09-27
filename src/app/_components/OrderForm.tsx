@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type FormEvent, type KeyboardEvent } from "react";
 import { isIsoDate, money, parseNonNegativeNumber, parsePositiveNumber, today } from "@/lib/format";
-import { UNITS, type CatalogItem, type Order } from "@/lib/types";
+import type { CatalogItem, Order } from "@/lib/types";
 import { useSession } from "./Gate";
 import { Button, ErrorText, Field, TextArea, useAction } from "./ui";
 import { VendorPicker } from "./VendorPicker";
@@ -13,12 +13,11 @@ interface Row {
   key: number;
   name: string;
   qty: string;
-  unit: string;
   rate: string;
 }
 
 let nextKey = 1;
-const blankRow = (): Row => ({ key: nextKey++, name: "", qty: "", unit: "", rate: "" });
+const blankRow = (): Row => ({ key: nextKey++, name: "", qty: "", rate: "" });
 const isBlank = (r: Row) => !r.name.trim() && !r.qty.trim() && !r.rate.trim();
 
 /** Set after a new order is saved, so the order page can say so once. */
@@ -34,7 +33,7 @@ export function OrderForm({ order, initialVendorId }: { order?: Order; initialVe
   const [vendorId, setVendorId] = useState<string | null>(order?.vendorId ?? initialVendorId ?? null);
   const [rows, setRows] = useState<Row[]>(() =>
     order
-      ? order.items.map((it) => ({ key: nextKey++, name: it.name, qty: String(it.qty), unit: it.unit, rate: String(it.rate) }))
+      ? order.items.map((it) => ({ key: nextKey++, name: it.name, qty: String(it.qty), rate: String(it.rate) }))
       : [blankRow()]);
   const [orderDate, setOrderDate] = useState(order?.orderDate ?? today());
   const [expectedDate, setExpectedDate] = useState(order?.expectedDate ?? "");
@@ -50,6 +49,13 @@ export function OrderForm({ order, initialVendorId }: { order?: Order; initialVe
     formRef.current?.querySelector<HTMLInputElement>(`[data-row="${focusRow.current}"][data-col="name"]`)?.focus();
     focusRow.current = null;
   }, [rows]);
+
+  // Once a vendor is picked, go straight to the first empty item.
+  useEffect(() => {
+    if (!vendorId || order) return;
+    [...(formRef.current?.querySelectorAll<HTMLInputElement>('[data-col="name"]') ?? [])]
+      .find((i) => !i.value)?.focus();
+  }, [vendorId, order]);
 
   const update = (key: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -89,7 +95,7 @@ export function OrderForm({ order, initialVendorId }: { order?: Order; initialVe
       if (!r.name.trim()) return setError(`Item ${i + 1}: enter what you're ordering.`);
       if (qty == null) return setError(`${r.name.trim()}: enter a quantity above 0.`);
       if (rate == null) return setError(`${r.name.trim()}: enter the rate (0 if not known yet).`);
-      items.push({ name: r.name.trim(), qty, unit: r.unit.trim(), rate });
+      items.push({ name: r.name.trim(), qty, rate });
     }
     if (!isIsoDate(orderDate)) return setError("Enter the order date.");
 
@@ -132,7 +138,6 @@ export function OrderForm({ order, initialVendorId }: { order?: Order; initialVe
           ))}
         </div>
         <Button variant="secondary" className="self-start" onClick={addRow}>＋ Add another item</Button>
-        <datalist id="units">{UNITS.map((u) => <option key={u} value={u} />)}</datalist>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -182,6 +187,9 @@ function StepTitle({ n, text }: { n: number; text: string }) {
   );
 }
 
+/** Tapping a filled-in number selects it, so typing replaces it instead of adding digits. */
+const selectAll = (e: FocusEvent<HTMLInputElement>) => e.target.select();
+
 const boxLook =
   "min-h-11 w-full rounded-xl border border-border bg-surface px-3 py-2 text-base outline-none focus:border-accent focus:ring-2 focus:ring-accent/20";
 
@@ -199,25 +207,21 @@ function ItemRow({ row, index, amount, catalog, canRemove, onChange, onRemove }:
     : [];
 
   function pick(c: CatalogItem) {
-    onChange({
-      name: c.name,
-      unit: row.unit || c.unit,
-      rate: row.rate || String(c.lastRate),
-    });
+    onChange({ name: c.name, rate: row.rate || String(c.lastRate) });
     setSuggest(false);
   }
 
-  // Typing a saved item's full name also fills its unit and last rate.
+  // Typing a saved item's full name also fills its last rate.
   function onName(name: string) {
     const exact = catalog.find((c) => c.name.toLowerCase() === name.trim().toLowerCase());
-    onChange(exact ? { name, unit: row.unit || exact.unit, rate: row.rate || String(exact.lastRate) } : { name });
+    onChange(exact ? { name, rate: row.rate || String(exact.lastRate) } : { name });
     setSuggest(true);
   }
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-3">
       <div className="grid grid-cols-6 gap-2 md:grid-cols-12 md:items-end">
-        <label className="relative col-span-6 flex flex-col gap-1 text-sm md:col-span-5">
+        <label className="relative col-span-6 flex flex-col gap-1 text-sm md:col-span-7">
           <span className="font-medium text-muted">Item {index + 1}</span>
           <input data-row={row.key} data-col="name" value={row.name} maxLength={120} autoComplete="off"
             placeholder="e.g. Cement" className={boxLook}
@@ -237,26 +241,21 @@ function ItemRow({ row, index, amount, catalog, canRemove, onChange, onRemove }:
                   <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => pick(c)}
                     className="flex min-h-11 w-full items-center justify-between gap-3 px-3 text-left hover:bg-surface-2">
                     <span className="font-medium">{c.name}</span>
-                    <span className="text-muted">{c.unit ? `${c.unit} · ` : ""}{money(c.lastRate)}</span>
+                    <span className="text-muted">{money(c.lastRate)}</span>
                   </button>
                 </li>
               ))}
             </ul>
           )}
         </label>
-        <label className="col-span-2 flex flex-col gap-1 text-sm md:col-span-2">
+        <label className="col-span-3 flex flex-col gap-1 text-sm md:col-span-2">
           <span className="font-medium text-muted">Qty</span>
-          <input data-row={row.key} data-col="qty" inputMode="decimal" autoComplete="off" value={row.qty}
+          <input data-row={row.key} data-col="qty" inputMode="decimal" autoComplete="off" value={row.qty} onFocus={selectAll}
             onChange={(e) => onChange({ qty: e.target.value })} className={`${boxLook} tabular-nums`} />
         </label>
-        <label className="col-span-2 flex flex-col gap-1 text-sm md:col-span-2">
-          <span className="font-medium text-muted">Unit</span>
-          <input data-row={row.key} data-col="unit" list="units" maxLength={20} autoComplete="off" value={row.unit}
-            placeholder="bag" onChange={(e) => onChange({ unit: e.target.value })} className={boxLook} />
-        </label>
-        <label className="col-span-2 flex flex-col gap-1 text-sm md:col-span-2">
+        <label className="col-span-3 flex flex-col gap-1 text-sm md:col-span-2">
           <span className="font-medium text-muted">Rate (Rs)</span>
-          <input data-row={row.key} data-col="rate" inputMode="decimal" autoComplete="off" value={row.rate}
+          <input data-row={row.key} data-col="rate" inputMode="decimal" autoComplete="off" value={row.rate} onFocus={selectAll}
             onChange={(e) => onChange({ rate: e.target.value })} className={`${boxLook} tabular-nums`} />
         </label>
         <div className="col-span-6 flex items-center justify-between md:col-span-1 md:flex-col md:items-end md:justify-end">

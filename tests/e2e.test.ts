@@ -46,7 +46,7 @@ async function signUp(name: string) {
 }
 
 const newOrder = (vendorId: string, over: Record<string, unknown> = {}) => ({
-  vendorId, items: [{ name: "Cotton", qty: 200, unit: "yd", rate: 12.5 }],
+  vendorId, items: [{ name: "Cotton", qty: 200, rate: 12.5 }],
   orderDate: "2026-09-01", expectedDate: null, status: "ordered",
   invoiceAmount: null, invoiceNo: null, invoiceDate: null, note: "", ...over,
 });
@@ -92,8 +92,9 @@ describe("signup, provisioning and isolation", () => {
     const save = httpsCallable<Record<string, unknown>, { id: string; number: number }>(a.fns, "saveOrder");
     const second = await save(newOrder(vendorId, {
       items: [
+        // An old client may still send a unit; it's ignored.
         { name: "  Cement ", qty: 50, unit: "bag", rate: 1450 },
-        { name: "Binding wire", qty: 3, unit: "kg", rate: 0.1 },
+        { name: "Binding wire", qty: 3, rate: 0.1 },
       ],
     }));
     expect(second.data.number).toBe(2);
@@ -102,10 +103,12 @@ describe("signup, provisioning and isolation", () => {
     expect(o).toMatchObject({
       number: 2, vendorId, vendorName: "Karachi Cotton", amount: 72_500.3,
       items: [
-        { name: "Cement", qty: 50, unit: "bag", rate: 1450, amount: 72_500 },
-        { name: "Binding wire", qty: 3, unit: "kg", rate: 0.1, amount: 0.3 },
+        { name: "Cement", qty: 50, rate: 1450, amount: 72_500 },
+        { name: "Binding wire", qty: 3, rate: 0.1, amount: 0.3 },
       ],
     });
+
+    expect(o.items[0]).not.toHaveProperty("unit");
 
     const items = await getDocs(collection(a.db, `businesses/${a.businessId}/items`));
     expect(items.docs.map((d) => d.data().name).sort()).toEqual(["Binding wire", "Cement", "Cotton"]);
@@ -119,9 +122,9 @@ describe("signup, provisioning and isolation", () => {
     const save = httpsCallable(a.fns, "saveOrder");
     const bad = (over: Record<string, unknown>) => save(newOrder(vendorId, over));
     await expect(bad({ items: [] })).rejects.toThrow("Add at least one item.");
-    await expect(bad({ items: [{ name: "X", qty: 0, unit: "", rate: 1 }] }))
+    await expect(bad({ items: [{ name: "X", qty: 0, rate: 1 }] }))
       .rejects.toThrow("Item 1 quantity must be more than 0.");
-    await expect(bad({ items: [{ name: "", qty: 1, unit: "", rate: 1 }] }))
+    await expect(bad({ items: [{ name: "", qty: 1, rate: 1 }] }))
       .rejects.toThrow("Enter item 1 name.");
     await expect(bad({ orderDate: "2026-13-45" })).rejects.toMatchObject({ code: "functions/invalid-argument" });
     await expect(bad({ vendorId: "nope" })).rejects.toMatchObject({ code: "functions/not-found" });
@@ -135,7 +138,7 @@ describe("signup, provisioning and isolation", () => {
     const { data } = await save(newOrder(vendorId));
     await save(newOrder(vendorId, {
       orderId: data.id, status: "received", invoiceAmount: 2600, invoiceNo: "B-1",
-      items: [{ name: "Cotton", qty: 208, unit: "yd", rate: 12.5 }],
+      items: [{ name: "Cotton", qty: 208, rate: 12.5 }],
     }));
     const log = await getDocs(collection(a.db, `businesses/${a.businessId}/auditLog`));
     const fields = log.docs.filter((d) => d.data().entityId === data.id).map((d) => d.data().field).sort();

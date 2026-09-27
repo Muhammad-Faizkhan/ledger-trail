@@ -73,7 +73,7 @@ export function VendorLinkView({ token }: { token: string }) {
                 <ul className="mt-1">
                   {o.items.map((it, i) => (
                     <li key={i} className="flex justify-between gap-3">
-                      <span>{it.name}: {num(it.qty)} {it.unit} × {money(it.rate)}</span>
+                      <span>{it.name}: {num(it.qty)} × {money(it.rate)}</span>
                       <span className="tabular-nums">{money(it.amount)}</span>
                     </li>
                   ))}
