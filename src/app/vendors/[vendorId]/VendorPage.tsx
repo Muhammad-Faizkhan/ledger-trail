@@ -8,9 +8,10 @@ import {
 } from "@/lib/format";
 import { ORDER_STATUSES, type Order, type OrderStatus, type Payment, type PaymentMethod, type Vendor } from "@/lib/types";
 import { Gate, type Session } from "../../_components/Gate";
-import { Badge, Button, Card, ErrorText, Field, Select } from "../../_components/ui";
+import { Badge, Button, Card, ConfirmDelete, ErrorText, Field, Select } from "../../_components/ui";
 import {
-  addOrder, addPayment, clearCheque, createVendorLink, revokeVendorLink, updateOrder, updateVendor, vendorLinkUrl,
+  addOrder, addPayment, clearCheque, createVendorLink, deleteOrder, deletePayment, revokeVendorLink,
+  updateOrder, updateVendor, vendorLinkUrl,
 } from "../../_components/writes";
 
 const STATUS_OPTIONS = ORDER_STATUSES.map((s) => [s, s[0].toUpperCase() + s.slice(1)] as [string, string]);
@@ -291,6 +292,14 @@ function OrderCard({ session, vendor, order, balance, payments }: {
             Send order on WhatsApp
           </a>
         )}
+        <span className="ml-auto pb-2">
+          {payments.length > 0 ? (
+            <span className="text-xs text-muted">Delete its payments to delete this order</span>
+          ) : (
+            <ConfirmDelete label="Delete order" disabled={busy}
+              onConfirm={() => run(() => deleteOrder(session.businessId, session.uid, order))} />
+          )}
+        </span>
       </div>
       <ErrorText>{error}</ErrorText>
 
@@ -371,7 +380,11 @@ function PaymentRow({ session, payment: p }: { session: Session; payment: Paymen
     <li className="flex flex-col gap-1 py-2 text-sm">
       <div className="flex justify-between gap-3">
         <span><span className="text-muted">{p.date} · </span>{methodLabel(p)}</span>
-        <span className="font-medium">{money(p.amount)}</span>
+        <span className="flex items-center gap-3">
+          <ConfirmDelete disabled={busy}
+            onConfirm={() => run(() => deletePayment(session.businessId, session.uid, p))} />
+          <span className="font-medium">{money(p.amount)}</span>
+        </span>
       </div>
       {p.method === "cheque" && (
         <div className="flex items-center gap-2">

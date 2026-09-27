@@ -1,4 +1,6 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+"use client";
+
+import { useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
@@ -67,4 +69,24 @@ export function Select({
 export function Badge({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "accent" | "danger" }) {
   const look = { muted: "border-border text-muted", accent: "border-accent text-accent", danger: "border-danger text-danger" }[tone];
   return <span className={`inline-block rounded-full border px-2 py-0.5 text-xs ${look}`}>{children}</span>;
+}
+
+/** Two-step inline confirm for destructive actions. */
+export function ConfirmDelete({ onConfirm, disabled, label = "Delete" }: {
+  onConfirm: () => void; disabled?: boolean; label?: string;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return (
+      <button type="button" disabled={disabled} onClick={() => setAsking(true)}
+        className="text-sm text-muted hover:text-danger disabled:opacity-50">{label}</button>
+    );
+  }
+  return (
+    <span className="flex items-center gap-3 text-sm">
+      <button type="button" className="font-medium text-danger" disabled={disabled}
+        onClick={() => { setAsking(false); onConfirm(); }}>Yes, delete</button>
+      <button type="button" className="text-muted" onClick={() => setAsking(false)}>Keep</button>
+    </span>
+  );
 }

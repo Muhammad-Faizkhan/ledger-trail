@@ -3,10 +3,12 @@
 // Every write the owner's UI makes. Edits to existing records go in a batch
 // with an auditLog entry per changed field, so history can't drift from data.
 import {
-  addDoc, collection, doc, serverTimestamp, writeBatch, type WriteBatch,
+  addDoc, collection, doc, serverTimestamp, updateDoc, writeBatch, type WriteBatch,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
+import { methodLabel } from "@/lib/derive";
 import { db, functions } from "@/lib/firebase";
+import { money } from "@/lib/format";
 import type { AuditEntry, Order, OrderStatus, Payment, PaymentMethod, Vendor } from "@/lib/types";
 
 const col = (businessId: string, name: string) => collection(db, "businesses", businessId, name);
@@ -23,6 +25,21 @@ function logEdits<T extends object>(
       editedBy: uid, editedAt: serverTimestamp(),
     });
   }
+}
+
+/** Records a deletion; `summary` keeps the record readable in history after it's gone. */
+function logDelete(
+  batch: WriteBatch, businessId: string, uid: string,
+  entity: AuditEntry["entity"], entityId: string, summary: string,
+) {
+  batch.set(doc(col(businessId, "auditLog")), {
+    entity, entityId, field: "deleted", oldValue: summary, newValue: null,
+    editedBy: uid, editedAt: serverTimestamp(),
+  });
+}
+
+export function updateBusiness(businessId: string, changes: { name: string; phone: string }) {
+  return updateDoc(doc(db, "businesses", businessId), changes);
 }
 
 export async function updateVendor(
@@ -108,6 +125,23 @@ export async function clearCheque(businessId: string, uid: string, payment: Paym
   const batch = writeBatch(db);
   batch.update(doc(col(businessId, "payments"), payment.id), changes);
   logEdits(batch, businessId, uid, "payment", payment.id, payment, changes);
+  await batch.commit();
+}
+
+/** Callers must make sure the order has no payments left (see VendorPage). */
+export async function deleteOrder(businessId: string, uid: string, order: Order) {
+  const batch = writeBatch(db);
+  batch.delete(doc(col(businessId, "orders"), order.id));
+  logDelete(batch, businessId, uid, "order", order.id,
+    `${order.vendorName}: ${order.description}, ${money(order.amount)} (${order.orderDate})`);
+  await batch.commit();
+}
+
+export async function deletePayment(businessId: string, uid: string, payment: Payment) {
+  const batch = writeBatch(db);
+  batch.delete(doc(col(businessId, "payments"), payment.id));
+  logDelete(batch, businessId, uid, "payment", payment.id,
+    `${payment.vendorName}: ${methodLabel(payment)}, ${money(payment.amount)} (${payment.date})`);
   await batch.commit();
 }
 

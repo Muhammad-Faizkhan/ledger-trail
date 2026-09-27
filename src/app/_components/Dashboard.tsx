@@ -8,14 +8,17 @@ import { audit, methodLabel, recentActivity, totalOutstanding, vendorTotals, typ
 import { db } from "@/lib/firebase";
 import { APP_NAME, money, today } from "@/lib/format";
 import type { Ledger } from "./useLedger";
+import { updateBusiness } from "./writes";
 import { Button, Card, ErrorText, Field } from "./ui";
 
 export function Dashboard({ businessId, ledger }: { businessId: string; ledger: Ledger }) {
   const { business, vendors, orders, payments } = ledger;
   const totals = vendorTotals(orders, payments);
   const report = audit(orders, payments, today());
-  const warnings = report.mismatches.length + report.overdue.length + report.staleCheques.length;
+  const warnings = report.mismatches.length + report.overdue.length + report.staleCheques.length
+    + report.orphanPayments.length;
   const activity = recentActivity(orders, payments);
+  const [editing, setEditing] = useState(false);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4">
@@ -23,9 +26,22 @@ export function Dashboard({ businessId, ledger }: { businessId: string; ledger: 
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-accent">{APP_NAME}</p>
           <h1 className="text-xl font-semibold">{business?.name}</h1>
+          {!editing && (
+            <button type="button" className="text-sm text-muted hover:text-accent" onClick={() => setEditing(true)}>
+              {business?.phone ? `${business.phone} · ` : ""}Edit details
+            </button>
+          )}
         </div>
-        <Button variant="ghost" onClick={() => signOut()}>Sign out</Button>
+        <nav className="flex items-center gap-1">
+          <Link href="/history" className="px-3 py-2 text-sm text-muted hover:text-foreground">History</Link>
+          <Button variant="ghost" onClick={() => signOut()}>Sign out</Button>
+        </nav>
       </header>
+
+      {editing && business && (
+        <EditBusiness businessId={businessId} name={business.name} phone={business.phone}
+          onDone={() => setEditing(false)} />
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat label="You owe vendors" value={money(totalOutstanding(orders, payments))} />
@@ -101,6 +117,10 @@ function Attention({ report }: { report: AuditReport }) {
       key: `c-${payment.id}`, vendorId: payment.vendorId,
       text: `${payment.vendorName}: ${methodLabel(payment)} for ${money(payment.amount)} not cleared after ${days} days`,
     })),
+    ...report.orphanPayments.map((p) => ({
+      key: `x-${p.id}`, vendorId: p.vendorId,
+      text: `${p.vendorName}: payment of ${money(p.amount)} on ${p.date} belongs to an order that no longer exists`,
+    })),
   ];
   return (
     <Card>
@@ -112,6 +132,45 @@ function Attention({ report }: { report: AuditReport }) {
           </li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+function EditBusiness({ businessId, name: initialName, phone: initialPhone, onDone }: {
+  businessId: string; name: string; phone: string; onDone: () => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [phone, setPhone] = useState(initialPhone);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await updateBusiness(businessId, { name: name.trim(), phone: phone.trim() });
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <form onSubmit={submit} className="flex flex-col gap-3">
+        <Field label="Business name" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
+        <Field label="Phone" type="tel" maxLength={30} value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <p className="text-xs text-muted">
+          The new name is used on future messages and statements. Existing orders keep showing correctly.
+        </p>
+        <ErrorText>{error}</ErrorText>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={busy || !name.trim()}>{busy ? "Saving…" : "Save"}</Button>
+          <Button type="button" variant="ghost" onClick={onDone}>Cancel</Button>
+        </div>
+      </form>
     </Card>
   );
 }
