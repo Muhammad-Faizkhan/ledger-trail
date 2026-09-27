@@ -10,6 +10,7 @@ import {
 import { ORDER_STATUSES, type Order, type OrderStatus } from "@/lib/types";
 import { useSession } from "@/app/_components/Gate";
 import { justSaved } from "@/app/_components/OrderForm";
+import { SharePdfButton } from "@/app/_components/SharePdfButton";
 import {
   Badge, Button, Card, ConfirmDelete, EmptyState, ErrorText, Field, LinkButton, Money, NumberField, PageHeader,
   STATUS_LABEL, StatusBadge, useAction,
@@ -37,7 +38,8 @@ export function OrderPage({ orderId }: { orderId: string }) {
   const { paid, balance } = alloc.byOrder.get(order.id) ?? { paid: 0, balance: order.amount };
   const applied = alloc.applied.filter((a) => a.orderId === order.id);
   const paymentById = new Map(ledger.payments.map((p) => [p.id, p]));
-  const waUrl = vendor ? whatsAppUrl(vendor.phone, orderMessage(order, ledger.business?.name ?? "")) : null;
+  const business = ledger.business!;
+  const waUrl = vendor ? whatsAppUrl(vendor.phone, orderMessage(order, business.name)) : null;
   const po = poNumber(order.number);
 
   return (
@@ -133,14 +135,23 @@ export function OrderPage({ orderId }: { orderId: string }) {
 
       <Bill order={order} />
 
-      <div className="no-print flex flex-wrap items-center gap-2">
-        {waUrl ? (
-          <LinkButton href={waUrl} external variant="secondary">Send on WhatsApp</LinkButton>
-        ) : (
-          <p className="text-sm text-muted">Add the vendor&apos;s phone number to send orders on WhatsApp.</p>
+      <Card className="no-print flex flex-col gap-3">
+        <h2 className="font-semibold">Send to {order.vendorName}</h2>
+        <div className="flex flex-wrap items-start gap-2">
+          <SharePdfButton variant="primary" filename={`${po}.pdf`} phone={vendor?.phone ?? ""}
+            message={`Purchase order ${po} from ${business.name}: ${money(order.amount)}`}
+            build={(pdf) => pdf.orderPdf(order, vendor, business)} />
+          {waUrl && <LinkButton href={waUrl} external variant="secondary">Send as text message</LinkButton>}
+        </div>
+        {!waUrl && (
+          <p className="text-sm text-muted">
+            Add {order.vendorName}&apos;s phone number (Vendors → Edit) to open their chat directly.
+          </p>
         )}
-        <LinkButton href={`/orders/${order.id}/print`} variant="secondary">Print / PDF</LinkButton>
-        <span className="ml-auto">
+      </Card>
+
+      <div className="no-print flex justify-end">
+        <span>
           <ConfirmDelete label="Delete order" disabled={del.busy}
             question={applied.length ? `Delete ${po}? Its payments stay on ${order.vendorName}'s account.` : `Delete ${po}?`}
             onConfirm={async () => {

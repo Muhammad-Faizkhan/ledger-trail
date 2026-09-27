@@ -221,6 +221,11 @@ Phases 0–6 are built. Phase 7 (going live) is next and needs the owner to enab
   straight from Save would be blocked as a pop-up by some browsers.
 - **Deleting an order is always allowed.** Its pinned payments move to the vendor's
   account (logged in history), instead of blocking the delete.
+- **Share PDF on WhatsApp replaces Print / PDF** (owner's request, 2026-09-27). The
+  purchase order and statement are built as PDFs in the browser (`src/lib/pdf.ts`,
+  jsPDF) and handed to the device's Share menu, where the owner picks WhatsApp. A web
+  page can't attach a file to a WhatsApp chat on its own, so without a Share menu the
+  PDF downloads and the vendor's chat is offered instead. The print pages are gone.
 - **Vendors can be renamed** (added 2026-09-27 at the owner's request): an **Edit**
   button on the vendor page opens name, phone and notes. The `renameVendor` function
   updates the vendor and the name copied onto all their orders and payments in one

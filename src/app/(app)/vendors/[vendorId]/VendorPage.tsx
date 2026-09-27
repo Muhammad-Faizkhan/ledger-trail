@@ -7,6 +7,7 @@ import { itemsSummary, poNumber, today, whatsAppUrl } from "@/lib/format";
 import type { Vendor } from "@/lib/types";
 import { useSession } from "@/app/_components/Gate";
 import { PaymentRow } from "@/app/_components/PaymentRow";
+import { SharePdfButton } from "@/app/_components/SharePdfButton";
 import {
   Button, Card, Chips, EmptyState, ErrorText, LinkButton, Money, PageHeader, StatusBadge, useAction,
 } from "@/app/_components/ui";
@@ -98,19 +99,20 @@ export function VendorPage({ vendorId }: { vendorId: string }) {
 
 function Details({ vendor }: { vendor: Vendor }) {
   const { ledger } = useSession();
+  const business = ledger.business!;
   const statementUrl = whatsAppUrl(
-    vendor.phone, vendorStatement(vendor, ledger.orders, ledger.payments, ledger.business?.name ?? "", today()),
+    vendor.phone, vendorStatement(vendor, ledger.orders, ledger.payments, business.name, today()),
   );
   return (
     <>
       <Card className="flex flex-col gap-3">
         <h2 className="font-semibold">Statement</h2>
         <p className="text-sm text-muted">Every order and payment with {vendor.name}, and the balance.</p>
-        <div className="flex flex-wrap gap-2">
-          {statementUrl
-            ? <LinkButton href={statementUrl} external>Send on WhatsApp</LinkButton>
-            : <p className="text-sm text-muted">Add a phone number below to send it on WhatsApp.</p>}
-          <LinkButton href={`/vendors/${vendor.id}/statement`} variant="secondary">Print / PDF</LinkButton>
+        <div className="flex flex-wrap items-start gap-2">
+          <SharePdfButton variant="primary" filename={`Statement ${vendor.name} ${today()}.pdf`} phone={vendor.phone}
+            message={`Statement from ${business.name} for ${vendor.name}, as of ${today()}`}
+            build={(pdf) => pdf.statementPdf(vendor, ledger.orders, ledger.payments, business, today())} />
+          {statementUrl && <LinkButton href={statementUrl} external variant="secondary">Send as text message</LinkButton>}
         </div>
       </Card>
       <Card className="flex flex-col gap-3">
