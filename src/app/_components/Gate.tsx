@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { signOut, useAuth } from "@/lib/auth";
 import { BusinessSetup } from "./BusinessSetup";
 import { AuthForm } from "./AuthForm";
@@ -13,8 +13,17 @@ export interface Session {
   ledger: Ledger;
 }
 
+const SessionContext = createContext<Session | null>(null);
+
+/** The signed-in owner and their live ledger. Only usable inside <Gate>. */
+export function useSession(): Session {
+  const s = useContext(SessionContext);
+  if (!s) throw new Error("useSession() used outside <Gate>");
+  return s;
+}
+
 /** Renders `children` only once the owner is signed in, provisioned and set up. */
-export function Gate({ children }: { children: (s: Session) => ReactNode }) {
+export function Gate({ children }: { children: ReactNode }) {
   const s = useAuth();
   switch (s.status) {
     case "loading":
@@ -28,7 +37,7 @@ export function Gate({ children }: { children: (s: Session) => ReactNode }) {
         <Centered>
           <Card className="max-w-sm">
             <p className="text-danger">{s.message}</p>
-            <Button variant="ghost" className="mt-3 px-0" onClick={() => signOut()}>Sign out</Button>
+            <Button variant="secondary" className="mt-3" onClick={() => signOut()}>Sign out</Button>
           </Card>
         </Centered>
       );
@@ -37,12 +46,10 @@ export function Gate({ children }: { children: (s: Session) => ReactNode }) {
   }
 }
 
-function Loaded({ uid, businessId, children }: {
-  uid: string; businessId: string; children: (s: Session) => ReactNode;
-}) {
+function Loaded({ uid, businessId, children }: { uid: string; businessId: string; children: ReactNode }) {
   const ledger = useLedger(businessId);
   if (ledger.error) return <Centered><p className="text-danger">{ledger.error}</p></Centered>;
   if (!ledger.loaded) return <Centered><p className="text-muted">Loading your ledger…</p></Centered>;
   if (!ledger.business?.name) return <Centered><BusinessSetup businessId={businessId} /></Centered>;
-  return <>{children({ uid, businessId, ledger })}</>;
+  return <SessionContext value={{ uid, businessId, ledger }}>{children}</SessionContext>;
 }

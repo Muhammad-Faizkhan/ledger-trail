@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "emulators": "npm --prefix functions run build && firebase emulators:start",
+    "seed": "tsx scripts/seed-emulator.ts",
     "test:unit": "vitest run tests/unit",
     "test:rules": "firebase emulators:exec --only firestore \"vitest run tests/rules.test.ts\"",
     "test:e2e": "npm --prefix functions run build && firebase emulators:exec --only auth,firestore,functions \"vitest run tests/e2e.test.ts\"",

@@ -1,39 +1,67 @@
 @import "tailwindcss";
 
+/* Light by default (bright shops); dark follows the phone setting. */
 :root {
-  --background: #f7f7f5;
-  --foreground: #1c1c1a;
+  --background: #f5f6f4;
+  --foreground: #16181a;
   --surface: #ffffff;
-  --muted: #6b6b66;
-  --border: #e4e4df;
+  --surface-2: #eef0ed;
+  --muted: #5f6661;
+  --border: #dfe3df;
   --accent: #0f766e;
+  --accent-soft: #e2f3f0;
   --accent-foreground: #ffffff;
   --danger: #b42318;
+  --danger-soft: #fdecea;
+  --info: #1d5fc9;
+  --info-soft: #e7effc;
+  --success: #15803d;
+  --success-soft: #e5f5ea;
+  --warning: #a15c07;
+  --warning-soft: #fdf3e2;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-muted: var(--muted);
   --color-border: var(--border);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --color-accent-foreground: var(--accent-foreground);
   --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #121211;
-    --foreground: #ececea;
-    --surface: #1c1c1a;
-    --muted: #9a9a94;
-    --border: #2e2e2b;
+    --background: #111312;
+    --foreground: #ecefed;
+    --surface: #1a1d1c;
+    --surface-2: #232826;
+    --muted: #9ca39f;
+    --border: #2d3230;
     --accent: #2dd4bf;
-    --accent-foreground: #0b2a27;
+    --accent-soft: #123330;
+    --accent-foreground: #06201d;
     --danger: #f97066;
+    --danger-soft: #3a1714;
+    --info: #7cabf7;
+    --info-soft: #172640;
+    --success: #4ade80;
+    --success-soft: #132e1d;
+    --warning: #f5b454;
+    --warning-soft: #36260d;
   }
 }
 
@@ -41,4 +69,24 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Number fields: no spinners, they're too small to tap and easy to hit by mistake. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
 }

@@ -4,12 +4,12 @@ import { httpsCallable } from "firebase/functions";
 import { useEffect, useState } from "react";
 import { methodLabel } from "@/lib/derive";
 import { functions } from "@/lib/firebase";
-import { amountsDiffer, APP_NAME, money, num, round2 } from "@/lib/format";
+import { amountsDiffer, APP_NAME, money, num, poNumber, round2 } from "@/lib/format";
 import type { Order, Payment } from "@/lib/types";
-import { Badge, Card, Centered } from "../../_components/ui";
+import { Badge, Card, Centered, StatusBadge } from "../../_components/ui";
 
 // Shape returned by the resolveVendorLink Cloud Function.
-type LinkOrder = Pick<Order, "id" | "description" | "qty" | "rate" | "amount" | "orderDate" | "status" | "invoiceAmount" | "invoiceDate">;
+type LinkOrder = Pick<Order, "id" | "number" | "items" | "amount" | "orderDate" | "expectedDate" | "status" | "invoiceAmount" | "invoiceNo" | "invoiceDate" | "note">;
 type LinkPayment = Pick<Payment, "id" | "orderId" | "amount" | "method" | "date" | "bankRef" | "chequeNo" | "chequeBank" | "chequeDate" | "clearedStatus">;
 interface LinkData {
   businessName: string;
@@ -40,7 +40,7 @@ export function VendorLinkView({ token }: { token: string }) {
   }
 
   const { businessName, vendorName, orders, payments } = state.data;
-  const sortedOrders = [...orders].sort((a, b) => b.orderDate.localeCompare(a.orderDate));
+  const sortedOrders = [...orders].sort((a, b) => b.orderDate.localeCompare(a.orderDate) || b.number - a.number);
   const sortedPayments = [...payments].sort((a, b) => b.date.localeCompare(a.date));
   const ordered = round2(orders.reduce((s, o) => s + o.amount, 0));
   const paid = round2(payments.reduce((s, p) => s + p.amount, 0));
@@ -66,13 +66,22 @@ export function VendorLinkView({ token }: { token: string }) {
             {sortedOrders.map((o) => (
               <li key={o.id} className="py-3 text-sm">
                 <div className="flex justify-between gap-3">
-                  <span className="font-medium">{o.description}</span>
-                  <span className="font-medium">{money(o.amount)}</span>
+                  <span className="flex items-center gap-2 font-medium">{poNumber(o.number)} <StatusBadge status={o.status} /></span>
+                  <span className="font-medium tabular-nums">{money(o.amount)}</span>
                 </div>
-                <p className="text-muted">{o.orderDate} · {num(o.qty)} × {money(o.rate)} · {o.status}</p>
+                <p className="text-muted">{o.orderDate}{o.expectedDate ? ` · deliver by ${o.expectedDate}` : ""}</p>
+                <ul className="mt-1">
+                  {o.items.map((it, i) => (
+                    <li key={i} className="flex justify-between gap-3">
+                      <span>{it.name}: {num(it.qty)} {it.unit} × {money(it.rate)}</span>
+                      <span className="tabular-nums">{money(it.amount)}</span>
+                    </li>
+                  ))}
+                </ul>
+                {o.note && <p className="mt-1 text-muted">Note: {o.note}</p>}
                 {o.invoiceAmount != null && (
                   <p className="mt-1">
-                    Invoice {money(o.invoiceAmount)}{o.invoiceDate ? ` on ${o.invoiceDate}` : ""}{" "}
+                    Bill{o.invoiceNo ? ` #${o.invoiceNo}` : ""} {money(o.invoiceAmount)}{o.invoiceDate ? ` on ${o.invoiceDate}` : ""}{" "}
                     {amountsDiffer(o.invoiceAmount, o.amount) && <Badge tone="danger">differs from order</Badge>}
                   </p>
                 )}
@@ -90,7 +99,7 @@ export function VendorLinkView({ token }: { token: string }) {
               <li key={p.id} className="flex justify-between gap-3 py-2 text-sm">
                 <span>
                   <span className="text-muted">{p.date} · </span>
-                  {methodLabel({ ...p, bankAccount: null, cashTo: null } as Payment)}
+                  {methodLabel({ ...p, cashTo: null })}
                   {p.method === "cheque" && (
                     <> <Badge tone={p.clearedStatus === "cleared" ? "accent" : "muted"}>
                       {p.clearedStatus === "cleared" ? "cleared" : "not cleared yet"}

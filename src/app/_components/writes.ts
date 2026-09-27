@@ -2,6 +2,7 @@
 
 // Every write the owner's UI makes. Edits to existing records go in a batch
 // with an auditLog entry per changed field, so history can't drift from data.
+// Orders go through Cloud Functions, which do the same on the server.
 import {
   addDoc, collection, doc, serverTimestamp, updateDoc, writeBatch, type WriteBatch,
 } from "firebase/firestore";
@@ -9,7 +10,7 @@ import { httpsCallable } from "firebase/functions";
 import { methodLabel } from "@/lib/derive";
 import { db, functions } from "@/lib/firebase";
 import { money } from "@/lib/format";
-import type { AuditEntry, Order, OrderStatus, Payment, PaymentMethod, Vendor } from "@/lib/types";
+import type { AuditEntry, Order, Payment, PaymentMethod, Vendor } from "@/lib/types";
 
 const col = (businessId: string, name: string) => collection(db, "businesses", businessId, name);
 
@@ -42,6 +43,13 @@ export function updateBusiness(businessId: string, changes: { name: string; phon
   return updateDoc(doc(db, "businesses", businessId), changes);
 }
 
+export async function addVendor(businessId: string, v: { name: string; phone: string }): Promise<string> {
+  const ref = await addDoc(col(businessId, "vendors"), {
+    name: v.name.trim(), phone: v.phone.trim(), notes: "", createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
 export async function updateVendor(
   businessId: string, uid: string, vendor: Vendor, changes: Pick<Vendor, "phone" | "notes">,
 ) {
@@ -51,39 +59,40 @@ export async function updateVendor(
   await batch.commit();
 }
 
-export interface NewOrder {
-  description: string;
-  qty: number;
-  rate: number;
+export interface OrderDraft {
+  orderId?: string;
+  vendorId: string;
+  items: { name: string; qty: number; unit: string; rate: number }[];
   orderDate: string;
-  status: OrderStatus;
+  expectedDate: string | null;
+  status: Order["status"];
+  invoiceAmount: number | null;
+  invoiceNo: string | null;
+  invoiceDate: string | null;
+  note: string;
 }
 
-export function addOrder(businessId: string, vendor: Vendor, o: NewOrder) {
-  return addDoc(col(businessId, "orders"), {
-    vendorId: vendor.id,
-    vendorName: vendor.name,
-    description: o.description,
-    qty: o.qty,
-    rate: o.rate,
-    // Must equal qty * rate exactly; the security rules check it.
-    amount: o.qty * o.rate,
-    orderDate: o.orderDate,
-    status: o.status,
-    invoiceAmount: null,
-    invoiceDate: null,
-    createdAt: serverTimestamp(),
-  });
+/** The editable fields of an existing order, ready to change and pass back to saveOrder. */
+export function draftOf(o: Order): OrderDraft {
+  return {
+    orderId: o.id, vendorId: o.vendorId,
+    items: o.items.map(({ name, qty, unit, rate }) => ({ name, qty, unit, rate })),
+    orderDate: o.orderDate, expectedDate: o.expectedDate, status: o.status,
+    invoiceAmount: o.invoiceAmount, invoiceNo: o.invoiceNo, invoiceDate: o.invoiceDate, note: o.note,
+  };
 }
 
-export async function updateOrder(
-  businessId: string, uid: string, order: Order,
-  changes: Partial<Pick<Order, "status" | "invoiceAmount" | "invoiceDate">>,
-) {
-  const batch = writeBatch(db);
-  batch.update(doc(col(businessId, "orders"), order.id), changes);
-  logEdits(batch, businessId, uid, "order", order.id, order, changes);
-  await batch.commit();
+export async function saveOrder(draft: OrderDraft): Promise<{ id: string; number: number }> {
+  const res = await httpsCallable<OrderDraft, { id: string; number: number }>(functions, "saveOrder")(draft);
+  return res.data;
+}
+
+export function updateOrder(order: Order, changes: Partial<OrderDraft>) {
+  return saveOrder({ ...draftOf(order), ...changes });
+}
+
+export async function deleteOrder(orderId: string) {
+  await httpsCallable(functions, "deleteOrder")({ orderId });
 }
 
 export interface NewPayment {
@@ -98,13 +107,14 @@ export interface NewPayment {
   cashTo?: string;
 }
 
-export function addPayment(businessId: string, order: Order, p: NewPayment) {
+/** `orderId` null means the payment counts against the vendor's account, oldest bills first. */
+export function addPayment(businessId: string, vendor: Vendor, orderId: string | null, p: NewPayment) {
   const opt = (v: string | undefined, forMethod: PaymentMethod) =>
     p.method === forMethod && v?.trim() ? v.trim() : null;
   return addDoc(col(businessId, "payments"), {
-    orderId: order.id,
-    vendorId: order.vendorId,
-    vendorName: order.vendorName,
+    orderId,
+    vendorId: vendor.id,
+    vendorName: vendor.name,
     amount: p.amount,
     method: p.method,
     date: p.date,
@@ -128,15 +138,6 @@ export async function clearCheque(businessId: string, uid: string, payment: Paym
   await batch.commit();
 }
 
-/** Callers must make sure the order has no payments left (see VendorPage). */
-export async function deleteOrder(businessId: string, uid: string, order: Order) {
-  const batch = writeBatch(db);
-  batch.delete(doc(col(businessId, "orders"), order.id));
-  logDelete(batch, businessId, uid, "order", order.id,
-    `${order.vendorName}: ${order.description}, ${money(order.amount)} (${order.orderDate})`);
-  await batch.commit();
-}
-
 export async function deletePayment(businessId: string, uid: string, payment: Payment) {
   const batch = writeBatch(db);
   batch.delete(doc(col(businessId, "payments"), payment.id));
@@ -155,4 +156,3 @@ export async function revokeVendorLink(vendorId: string) {
 }
 
 export const vendorLinkUrl = (token: string) => `${window.location.origin}/v/${token}`;
-

@@ -3,24 +3,26 @@
 import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
-import type { Business, Order, Payment, Vendor } from "@/lib/types";
+import type { Business, CatalogItem, Order, Payment, Vendor } from "@/lib/types";
 
 export interface Ledger {
   business: Business | null;
   vendors: Vendor[];
   orders: Order[];
   payments: Payment[];
+  catalog: CatalogItem[];
   loaded: boolean;
   error: string;
 }
 
-/** Live view of one business: its profile plus every vendor, order and payment. */
+/** Live view of one business: its profile plus every vendor, order, payment and saved item. */
 export function useLedger(businessId: string): Ledger {
   const [business, setBusiness] = useState<Business | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
-  const [ready, setReady] = useState({ business: false, vendors: false, orders: false, payments: false });
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [ready, setReady] = useState({ business: false, vendors: false, orders: false, payments: false, catalog: false });
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -44,12 +46,13 @@ export function useLedger(businessId: string): Ledger {
       list<Vendor>("vendors", "name", setVendors, "vendors"),
       list<Order>("orders", "orderDate", setOrders, "orders"),
       list<Payment>("payments", "date", setPayments, "payments"),
+      list<CatalogItem>("items", "name", setCatalog, "catalog"),
     ];
     return () => unsubs.forEach((u) => u());
   }, [businessId]);
 
   return {
-    business, vendors, orders, payments, error,
-    loaded: ready.business && ready.vendors && ready.orders && ready.payments,
+    business, vendors, orders, payments, catalog, error,
+    loaded: ready.business && ready.vendors && ready.orders && ready.payments && ready.catalog,
   };
 }

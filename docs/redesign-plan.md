@@ -162,44 +162,44 @@ Each phase ends with the tests passing and a commit.
 - [x] Confirm the four decisions above and update this document.
 
 ### Phase 1 — Data and backend
-- [ ] `types.ts`: `OrderItem`, the new `Order` fields, `Payment.orderId` nullable.
-- [ ] `derive.ts`: FIFO allocation (`allocatePayments(orders, payments)` →
+- [x] `types.ts`: `OrderItem`, the new `Order` fields, `Payment.orderId` nullable.
+- [x] `derive.ts`: FIFO allocation (`allocatePayments(orders, payments)` →
       per-order paid and balance), then update `orderBalance`, `vendorTotals`,
       `audit`, `vendorStatement` and `orderMessage` for multiple items.
-- [ ] Unit tests for the allocation edge cases:
+- [x] Unit tests for the allocation edge cases:
   - overpayment
   - a pinned payment plus an unpinned one
   - deleting an order that has payments applied to it
   - a payment with no orders yet
-- [ ] Cloud Functions: `saveOrder`, `deleteOrder` (transaction, counter, validation,
+- [x] Cloud Functions: `saveOrder`, `deleteOrder` (transaction, counter, validation,
       edit history). Update `resolveVendorLink` to return items.
-- [ ] `firestore.rules`: orders become read-only for clients; payments allow a null
+- [x] `firestore.rules`: orders become read-only for clients; payments allow a null
       `orderId`; `counters` has no client access; `items` catalog rules.
-- [ ] Rules and e2e tests updated, plus new e2e tests for `saveOrder` numbering and
+- [x] Rules and e2e tests updated, plus new e2e tests for `saveOrder` numbering and
       validation.
 
 ### Phase 2 — App shell and visual refresh
-- [ ] Theme tokens (light default), typography, a shared components set (Sheet, Tabs,
+- [x] Theme tokens (light default), typography, a shared components set (Sheet, Tabs,
       Chip, EmptyState, MoneyText).
-- [ ] Navigation bar and the always-visible ＋ New order button; `/settings`.
+- [x] Navigation bar and the always-visible ＋ New order button; `/settings`.
 
 ### Phase 3 — New order flow
-- [ ] Vendor picker with search and inline "add vendor".
-- [ ] Item rows with units, live totals and the catalog autocomplete (if decision 2 is yes).
-- [ ] Save, and Save & send on WhatsApp (formatted multi-item message with the PO number).
+- [x] Vendor picker with search and inline "add vendor".
+- [x] Item rows with units, live totals and the catalog autocomplete (if decision 2 is yes).
+- [x] Save, and Save & send on WhatsApp (formatted multi-item message with the PO number).
 
 ### Phase 4 — Orders
-- [ ] `/orders` list with search and filters.
-- [ ] `/orders/[id]` detail: edit, status steps, invoice number/amount/date, delete.
+- [x] `/orders` list with search and filters.
+- [x] `/orders/[id]` detail: edit, status steps, invoice number/amount/date, delete.
 
 ### Phase 5 — Payments
-- [ ] Record-payment sheet with account-level payments and an allocation preview.
-- [ ] `/payments` list; the pending-cheques view.
-- [ ] Vendor detail tabs.
+- [x] Record-payment sheet with account-level payments and an allocation preview.
+- [x] `/payments` list; the pending-cheques view.
+- [x] Vendor detail tabs.
 
 ### Phase 6 — Print and share
-- [ ] Printable purchase order and vendor statement (print CSS, Save as PDF).
-- [ ] Update the vendor link page for items and PO numbers.
+- [x] Printable purchase order and vendor statement (print CSS, Save as PDF).
+- [x] Update the vendor link page for items and PO numbers.
 
 ### Phase 7 — Go live (needs Blaze)
 - [ ] Owner: enable Blaze (with a budget alert), create Firestore (Standard, production
@@ -209,30 +209,46 @@ Each phase ends with the tests passing and a commit.
 - [ ] Deploy the Next.js app (Vercel) with the variables from `.env.production.local`.
 - [ ] Test the live app with a real signup.
 
-## Current state (end of 2026-09-26)
+## Current state (end of 2026-09-27)
 
-- **Backend:** Firestore rules, 4 Cloud Functions, and pure ledger logic in
-  `src/lib/derive.ts`.
-- **Tests:** 45 unit, plus rules and e2e tests, all passing. Tests need Java 21: set
-  `JAVA_HOME` to `C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot` if a terminal still
-  picks up 17.
-- **App:** sign-in, business setup, dashboard, vendor page (single-item orders, payments,
-  invoices, cheques, WhatsApp, share link), public vendor link page, edit history,
-  deletes. All of it is replaced or reworked by this plan.
-- **Firebase:**
-  - The local emulators (`demo-ledgertrail`) are what `npm run dev` uses.
-  - The live project is `ledgertrailer`, with the web app registered and its config in
-    `.env.production.local` (git-ignored). Firestore and Auth aren't set up yet, and the
-    project isn't on Blaze yet.
-  - `.firebaserc` alias: `live`.
-- **Git:** branch `main`. The delete, history and settings work was committed as
-  `073b04e` on 2026-09-27.
+Phases 0–6 are built. Phase 7 (going live) is next and needs the owner to enable Blaze.
+
+**Changes from the plan, and why:**
+- **New order and Record payment are full pages, not pop-up sheets.** On a phone a
+  sheet this long is harder to use than a page, and the Back button works as expected.
+- **One "Save order" button, not two.** After saving, the order page shows
+  "Order PO-0007 saved" with a big **Send on WhatsApp** button. Opening WhatsApp
+  straight from Save would be blocked as a pop-up by some browsers.
+- **Deleting an order is always allowed.** Its pinned payments move to the vendor's
+  account (logged in history), instead of blocking the delete.
+- **Vendor tabs are Orders · Payments · Details.** Details holds the statement
+  (WhatsApp and Print), phone and notes, and the vendor link.
+
+**Not done yet:**
+- UI text is not collected in one file yet (needed before adding Urdu).
+- Settings has no units list; units are fixed in `UNITS` (`src/lib/types.ts`) and
+  the unit box also accepts free text.
+- History has entity filters but no date filter.
+
+**Code map:**
+- Signed-in screens live under `src/app/(app)/` and share one layout
+  (`AppShell`), so the ledger loads once and stays live while moving between pages.
+- Orders are written only by the `saveOrder` / `deleteOrder` functions
+  (`functions/src/index.ts`, input checks in `functions/src/orderInput.ts`).
+- Which bills each payment paid is worked out by `allocatePayments` in
+  `src/lib/derive.ts`; nothing about it is stored.
+- **Tests:** 54 unit, 12 rules, 7 e2e. Tests need Java 21: set `JAVA_HOME` to
+  `C:Program FilesMicrosoftjdk-21.0.12.101-hotspot` if a terminal still picks up 17.
+- **Firebase:** the local emulators (`demo-ledgertrail`) are what `npm run dev` uses.
+  The live project is `ledgertrailer` (alias `live`), with its web config in
+  `.env.production.local` (git-ignored). Firestore and Auth aren't set up there yet.
 
 ### Running locally
 
 ```bash
 npm run emulators   # terminal 1 (needs Java 21)
 npm run dev         # terminal 2 → http://localhost:3000
+npm run seed        # optional, emulators running: demo business (login in scripts/seed-emulator.ts)
 npm test            # unit + rules + e2e
 ```
 
