@@ -22,22 +22,34 @@ use all day on a phone without thinking about it.
 | 7 | No printable or PDF purchase order or statement | WhatsApp gets plain text only |
 | 8 | Generic dark look, one long vendor page | Hard to read in a bright shop, too much scrolling |
 
-## Decisions to confirm first thing tomorrow
+## Decisions (confirmed 2026-09-27)
 
-These change the data model, so settle them before writing code. The recommended option
-is listed first.
+1. **Payments:** a lump sum against the vendor's account, applied to the oldest unpaid
+   orders first. A payment can still be pinned to one order.
+2. **Saved item list:** yes. Items keep their unit and last rate, so typing "cem" fills
+   in "Cement · bag · Rs 1,450".
+3. **Order numbers:** `PO-0001` per business, counting up, never reused, even after a
+   delete.
+4. **Units:** bag, ton, kg, pcs, ft, sq ft, litre, box, dozen, truck. The field also
+   accepts free text.
 
-1. **How are vendors paid?**
-   - **(Recommended)** Mostly a lump sum against the vendor's account. It is applied to
-     the oldest unpaid orders first, but you can still pin a payment to one order.
-   - Always bill by bill (keep today's model).
-2. **Saved item list?** Do you buy the same items again and again (cement, steel bars…)?
-   If yes, keep a list of items with their unit and last rate, so typing "cem" fills in
-   "Cement · bag · Rs 1,450".
-3. **Order number format.** `PO-0001` per business, counting up, never reused, even
-   after a delete. Or give a different prefix.
-4. **Units list.** Starting set: bag, ton, kg, pcs, ft, sq ft, litre, box, dozen, truck.
-   Anything to add? The field will allow free text as well.
+## Ease of use comes first
+
+Owner feedback (2026-09-27): the app is "getting tricky". Every screen in this plan must
+pass these rules before it's done:
+
+- **One main action per screen**, as one big button. Everything else is secondary.
+- **No hidden steps.** Nothing important sits behind "Edit" links or inside another
+  record. New order and Record payment are reachable from every screen in one tap.
+- **Plain words.** "You owe", "Paid", "To receive", not "outstanding", "allocation"
+  or "orphan".
+- **Show the result before saving.** The order total, and which bills a payment clears,
+  are visible while typing.
+- **Fewer fields.** Sensible defaults (today's date, the last unit and rate, "ordered"),
+  and optional details folded under "More details".
+- **Short pages.** Tabs instead of one long scroll; lists show about 20 rows with search.
+- **Every empty screen says what to do next.**
+- **Check at phone width (360px) first**, then desktop.
 
 ## What changes
 
@@ -144,10 +156,10 @@ Payments**, plus a large **＋ New order** button that's always visible.
 Each phase ends with the tests passing and a commit.
 
 ### Phase 0 — Housekeeping (15 min)
-- [ ] Commit the uncommitted work from 2026-09-26: order and payment delete with edit
+- [x] Commit the uncommitted work from 2026-09-26: order and payment delete with edit
       history, the `/history` page, editing business details, orphan payments in
       "Needs attention".
-- [ ] Confirm the four decisions above and update this document.
+- [x] Confirm the four decisions above and update this document.
 
 ### Phase 1 — Data and backend
 - [ ] `types.ts`: `OrderItem`, the new `Order` fields, `Payment.orderId` nullable.
@@ -213,8 +225,8 @@ Each phase ends with the tests passing and a commit.
     `.env.production.local` (git-ignored). Firestore and Auth aren't set up yet, and the
     project isn't on Blaze yet.
   - `.firebaserc` alias: `live`.
-- **Git:** branch `main`, last commit `622db0f`. The delete, history and settings work
-  is uncommitted (see Phase 0).
+- **Git:** branch `main`. The delete, history and settings work was committed as
+  `073b04e` on 2026-09-27.
 
 ### Running locally
 
