@@ -24,9 +24,10 @@ const dbNoClaim = () => env.authenticatedContext("uidC").firestore() as unknown 
 const dbAnon = () => env.unauthenticatedContext().firestore() as unknown as Firestore;
 
 const order = (over: Record<string, unknown> = {}) => ({
-  vendorId: "v1", vendorName: "Vendor One", description: "Cotton 200 yd",
-  qty: 200, rate: 12.5, amount: 2500, orderDate: "2026-09-01", status: "ordered",
-  invoiceAmount: null, invoiceDate: null, createdAt: serverTimestamp(), ...over,
+  number: 1, vendorId: "v1", vendorName: "Vendor One",
+  items: [{ name: "Cotton", qty: 200, unit: "yd", rate: 12.5, amount: 2500 }],
+  amount: 2500, orderDate: "2026-09-01", expectedDate: null, status: "ordered",
+  invoiceAmount: null, invoiceNo: null, invoiceDate: null, note: "", createdAt: serverTimestamp(), ...over,
 });
 
 const payment = (over: Record<string, unknown> = {}) => ({
@@ -84,7 +85,7 @@ describe("tenant isolation", () => {
     await assertFails(setDoc(doc(dbB(), `businesses/${A}/vendors/x`), {
       name: "Evil", phone: "", notes: "", createdAt: serverTimestamp(),
     }));
-    await assertFails(updateDoc(doc(dbB(), `businesses/${A}/orders/o1`), { description: "hacked" }));
+    await assertFails(updateDoc(doc(dbB(), `businesses/${A}/orders/o1`), { note: "hacked" }));
     await assertFails(deleteDoc(doc(dbB(), `businesses/${A}/orders/o1`)));
     await assertFails(deleteDoc(doc(dbB(), `businesses/${A}/payments/p1`)));
     await assertFails(updateDoc(doc(dbB(), `businesses/${A}`), { name: "hacked" }));
@@ -111,24 +112,31 @@ describe("tenant isolation", () => {
 });
 
 describe("data validation", () => {
-  it("order amount must equal qty * rate", async () => {
+  it("clients can read orders and the item list but never write them", async () => {
     const orders = collection(dbA(), `businesses/${A}/orders`);
-    await assertSucceeds(addDoc(orders, order()));
-    await assertSucceeds(addDoc(orders, order({ qty: 3, rate: 0.1, amount: 3 * 0.1 })));
-    await assertFails(addDoc(orders, order({ amount: 1 })));
-    await assertFails(updateDoc(doc(dbA(), `businesses/${A}/orders/o1`), { amount: 99999 }));
-    await assertSucceeds(updateDoc(doc(dbA(), `businesses/${A}/orders/o1`), { qty: 10, amount: 125 }));
+    await assertSucceeds(getDoc(doc(orders, "o1")));
+    await assertFails(addDoc(orders, order()));
+    await assertFails(setDoc(doc(orders, "o2"), order()));
+    await assertFails(updateDoc(doc(orders, "o1"), { status: "received" }));
+    await assertFails(deleteDoc(doc(orders, "o1")));
+
+    await assertSucceeds(getDocs(collection(dbA(), `businesses/${A}/items`)));
+    await assertFails(getDocs(collection(dbB(), `businesses/${A}/items`)));
+    await assertFails(setDoc(doc(dbA(), `businesses/${A}/items/cement`), { name: "Cement", unit: "bag", lastRate: 1 }));
   });
 
-  it("orders must reference an existing vendor of the same business", async () => {
-    await assertFails(addDoc(collection(dbA(), `businesses/${A}/orders`), order({ vendorId: "nope" })));
+  it("the PO counter has no client access at all", async () => {
+    await assertFails(getDoc(doc(dbA(), `businesses/${A}/counters/orders`)));
+    await assertFails(setDoc(doc(dbA(), `businesses/${A}/counters/orders`), { next: 1 }));
   });
 
-  it("payments must reference an existing order with a matching vendor", async () => {
+  it("payments go against a vendor's account or one of that vendor's orders", async () => {
     const payments = collection(dbA(), `businesses/${A}/payments`);
     await assertSucceeds(addDoc(payments, payment()));
+    await assertSucceeds(addDoc(payments, payment({ orderId: null })));
     await assertFails(addDoc(payments, payment({ orderId: "missing" })));
     await assertFails(addDoc(payments, payment({ vendorId: "other" })));
+    await assertFails(addDoc(payments, payment({ orderId: null, vendorId: "nope" })));
     await assertFails(addDoc(payments, payment({ amount: 0 })));
   });
 

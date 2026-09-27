@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  amountsDiffer, daysBetween, isIsoDate, money, num, parseNonNegativeNumber,
+  amountsDiffer, daysBetween, isIsoDate, itemsSummary, money, num, parseNonNegativeNumber, poNumber, qtyUnit,
   parsePositiveNumber, round2, today, whatsAppNumber, whatsAppUrl,
 } from "@/lib/format";
 
@@ -99,5 +99,24 @@ describe("number parsing", () => {
     for (const v of ["", "-0.5", "x", "Infinity"]) {
       expect(parseNonNegativeNumber(v)).toBeNull();
     }
+  });
+});
+
+describe("order labels", () => {
+  it("poNumber pads to 4 digits and keeps growing past 9999", () => {
+    expect(poNumber(7)).toBe("PO-0007");
+    expect(poNumber(12345)).toBe("PO-12345");
+  });
+
+  it("itemsSummary shows two names then a count", () => {
+    expect(itemsSummary([])).toBe("—");
+    expect(itemsSummary([{ name: "Cement" }])).toBe("Cement");
+    expect(itemsSummary([{ name: "Cement" }, { name: "Steel" }])).toBe("Cement, Steel");
+    expect(itemsSummary([{ name: "A" }, { name: "B" }, { name: "C" }, { name: "D" }])).toBe("A, B +2 more");
+  });
+
+  it("qtyUnit", () => {
+    expect(qtyUnit(50, "bag")).toBe("50 bag");
+    expect(qtyUnit(2.5, "")).toBe("2.5");
   });
 });

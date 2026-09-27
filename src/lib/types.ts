@@ -21,24 +21,39 @@ export interface Vendor {
   createdAt: Timestamp | null;
 }
 
+export interface OrderItem {
+  name: string;
+  qty: number;
+  unit: string;
+  rate: number;
+  /** round2(qty * rate), computed by the saveOrder function. */
+  amount: number;
+}
+
+/** Orders are written only by the saveOrder / deleteOrder Cloud Functions. */
 export interface Order {
   id: string;
+  /** 1, 2, 3… per business; shown as PO-0001. Never reused. */
+  number: number;
   vendorId: string;
   vendorName: string;
-  description: string;
-  qty: number;
-  rate: number;
+  items: OrderItem[];
+  /** Sum of item amounts. */
   amount: number;
   orderDate: string;
+  expectedDate: string | null;
   status: OrderStatus;
   invoiceAmount: number | null;
+  invoiceNo: string | null;
   invoiceDate: string | null;
+  note: string;
   createdAt: Timestamp | null;
 }
 
 export interface Payment {
   id: string;
-  orderId: string;
+  /** Pinned to one order, or null to count against the vendor's account (oldest bills first). */
+  orderId: string | null;
   vendorId: string;
   vendorName: string;
   amount: number;
@@ -55,6 +70,15 @@ export interface Payment {
   createdAt: Timestamp | null;
 }
 
+/** Saved item list, kept up to date by saveOrder. */
+export interface CatalogItem {
+  id: string;
+  name: string;
+  unit: string;
+  lastRate: number;
+  updatedAt: Timestamp | null;
+}
+
 export interface AuditEntry {
   id: string;
   entity: "vendor" | "order" | "payment";
@@ -67,3 +91,5 @@ export interface AuditEntry {
 }
 
 export const ORDER_STATUSES: OrderStatus[] = ["ordered", "confirmed", "received"];
+
+export const UNITS = ["bag", "ton", "kg", "pcs", "ft", "sq ft", "litre", "box", "dozen", "truck"];

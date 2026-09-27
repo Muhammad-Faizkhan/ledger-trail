@@ -76,3 +76,20 @@ export function parseNonNegativeNumber(v: string): number | null {
 }
 
 export const isIsoDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+/** Purchase order number as shown everywhere: 7 → "PO-0007". */
+export function poNumber(n: number): string {
+  return `PO-${String(n).padStart(4, "0")}`;
+}
+
+/** "Cement", "Cement, Steel bars", "Cement, Steel bars +2 more". */
+export function itemsSummary(items: { name: string }[]): string {
+  if (items.length === 0) return "—";
+  const shown = items.slice(0, 2).map((i) => i.name).join(", ");
+  return items.length > 2 ? `${shown} +${items.length - 2} more` : shown;
+}
+
+/** "50 bag", "2.5 ton". */
+export function qtyUnit(qty: number, unit: string): string {
+  return unit ? `${num(qty)} ${unit}` : num(qty);
+}

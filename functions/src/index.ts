@@ -1,9 +1,10 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import * as functionsV1 from "firebase-functions/v1";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, type DocumentReference, type Transaction } from "firebase-admin/firestore";
+import { catalogKey, InputError, itemsText, parseOrderInput, type OrderInput } from "./orderInput";
 
 initializeApp();
 const db = getFirestore();
@@ -47,6 +48,131 @@ function requireString(value: unknown, name: string): string {
   }
   return value;
 }
+
+const poNumber = (n: number) => `PO-${String(n).padStart(4, "0")}`;
+const rs = (n: number) => `Rs ${n.toLocaleString("en-PK", { maximumFractionDigits: 2 })}`;
+
+function logEntry(
+  tx: Transaction, biz: DocumentReference, uid: string,
+  entityId: string, field: string, oldValue: unknown, newValue: unknown,
+  entity: "order" | "payment" = "order",
+) {
+  tx.create(biz.collection("auditLog").doc(), {
+    entity, entityId, field, oldValue: oldValue ?? null, newValue: newValue ?? null,
+    editedBy: uid, editedAt: FieldValue.serverTimestamp(),
+  });
+}
+
+// Fields an owner can change on an existing order, and how edit history shows them.
+const EDITABLE: (keyof OrderInput)[] = [
+  "items", "amount", "orderDate", "expectedDate", "status", "invoiceAmount", "invoiceNo", "invoiceDate", "note",
+];
+
+/**
+ * Creates or edits an order. Orders are read-only to clients, so this is the
+ * only way one gets written: it checks every item, computes the amounts,
+ * hands out the next PO number, logs edits, and keeps the saved item list
+ * (catalog) up to date — all in one transaction.
+ */
+export const saveOrder = onCall(async (req) => {
+  const businessId = requireBusinessId(req.auth);
+  const uid = req.auth!.uid;
+  let input: OrderInput;
+  try {
+    input = parseOrderInput(req.data);
+  } catch (err) {
+    if (err instanceof InputError) throw new HttpsError("invalid-argument", err.message);
+    throw err;
+  }
+  const biz = db.doc(`businesses/${businessId}`);
+  const vendorRef = biz.collection("vendors").doc(input.vendorId);
+  const counterRef = biz.collection("counters").doc("orders");
+
+  return db.runTransaction(async (tx) => {
+    const vendor = await tx.get(vendorRef);
+    if (!vendor.exists) throw new HttpsError("not-found", "That vendor doesn't exist.");
+
+    const fields = {
+      items: input.items,
+      amount: input.amount,
+      orderDate: input.orderDate,
+      expectedDate: input.expectedDate,
+      status: input.status,
+      invoiceAmount: input.invoiceAmount,
+      invoiceNo: input.invoiceNo,
+      invoiceDate: input.invoiceDate,
+      note: input.note,
+    };
+
+    let orderRef: DocumentReference;
+    let number: number;
+    if (input.orderId) {
+      orderRef = biz.collection("orders").doc(input.orderId);
+      const existing = await tx.get(orderRef);
+      if (!existing.exists) throw new HttpsError("not-found", "This order was deleted.");
+      if (existing.get("vendorId") !== input.vendorId) {
+        throw new HttpsError("invalid-argument", "An order's vendor can't be changed. Delete it and make a new one.");
+      }
+      number = existing.get("number");
+      tx.update(orderRef, fields);
+      for (const field of EDITABLE) {
+        const before = existing.get(field) ?? null;
+        const after = input[field] ?? null;
+        if (JSON.stringify(before) === JSON.stringify(after)) continue;
+        if (field === "items") logEntry(tx, biz, uid, orderRef.id, "items", itemsText(before), itemsText(input.items));
+        else logEntry(tx, biz, uid, orderRef.id, field, before, after);
+      }
+    } else {
+      const counter = await tx.get(counterRef);
+      number = (counter.get("next") as number | undefined) ?? 1;
+      orderRef = biz.collection("orders").doc();
+      tx.set(counterRef, { next: number + 1 });
+      tx.create(orderRef, {
+        ...fields,
+        number,
+        vendorId: input.vendorId,
+        vendorName: vendor.get("name"),
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+
+    for (const it of input.items) {
+      const id = createHash("sha1").update(catalogKey(it.name)).digest("hex").slice(0, 20);
+      tx.set(biz.collection("items").doc(id), {
+        name: it.name, unit: it.unit, lastRate: it.rate, updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    return { id: orderRef.id, number };
+  });
+});
+
+/**
+ * Deletes an order. Payments that were pinned to it are kept and moved to the
+ * vendor's account (they then pay the oldest unpaid orders). The PO number is
+ * never handed out again.
+ */
+export const deleteOrder = onCall(async (req) => {
+  const businessId = requireBusinessId(req.auth);
+  const uid = req.auth!.uid;
+  const orderId = requireString(req.data?.orderId, "orderId");
+  const biz = db.doc(`businesses/${businessId}`);
+  const orderRef = biz.collection("orders").doc(orderId);
+
+  await db.runTransaction(async (tx) => {
+    const order = await tx.get(orderRef);
+    if (!order.exists) throw new HttpsError("not-found", "This order was already deleted.");
+    const pinned = await tx.get(biz.collection("payments").where("orderId", "==", orderId));
+    for (const p of pinned.docs) {
+      tx.update(p.ref, { orderId: null });
+      logEntry(tx, biz, uid, p.id, "orderId", poNumber(order.get("number")), null, "payment");
+    }
+    tx.delete(orderRef);
+    logEntry(tx, biz, uid, orderId, "deleted",
+      `${order.get("vendorName")}: ${poNumber(order.get("number"))}, ${rs(order.get("amount"))} (${order.get("orderDate")})`,
+      null);
+  });
+  return { ok: true };
+});
 
 /**
  * Creates (or returns the existing) self-serve link token for a vendor.
@@ -126,21 +252,23 @@ export const resolveVendorLink = onCall(async (req) => {
       const o = d.data();
       return {
         id: d.id,
-        description: o.description,
-        qty: o.qty,
-        rate: o.rate,
+        number: o.number,
+        items: o.items,
         amount: o.amount,
         orderDate: o.orderDate,
+        expectedDate: o.expectedDate ?? null,
         status: o.status,
         invoiceAmount: o.invoiceAmount ?? null,
+        invoiceNo: o.invoiceNo ?? null,
         invoiceDate: o.invoiceDate ?? null,
+        note: o.note ?? "",
       };
     }),
     payments: payments.docs.map((d) => {
       const p = d.data();
       return {
         id: d.id,
-        orderId: p.orderId,
+        orderId: p.orderId ?? null,
         amount: p.amount,
         method: p.method,
         date: p.date,

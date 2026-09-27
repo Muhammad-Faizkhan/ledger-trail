@@ -45,6 +45,12 @@ async function signUp(name: string) {
   return { ...c, user: cred.user, businessId };
 }
 
+const newOrder = (vendorId: string, over: Record<string, unknown> = {}) => ({
+  vendorId, items: [{ name: "Cotton", qty: 200, unit: "yd", rate: 12.5 }],
+  orderDate: "2026-09-01", expectedDate: null, status: "ordered",
+  invoiceAmount: null, invoiceNo: null, invoiceDate: null, note: "", ...over,
+});
+
 async function denied(p: Promise<unknown>) {
   await expect(p).rejects.toMatchObject({ code: "permission-denied" });
 }
@@ -77,13 +83,76 @@ describe("signup, provisioning and isolation", () => {
       name: "Karachi Cotton", phone: "0300 1234567", notes: "internal note", createdAt: serverTimestamp(),
     });
     vendorId = v.id;
-    await addDoc(collection(a.db, `businesses/${a.businessId}/orders`), {
-      vendorId, vendorName: "Karachi Cotton", description: "Cotton", qty: 200, rate: 12.5,
-      amount: 2500, orderDate: "2026-09-01", status: "ordered", invoiceAmount: null,
-      invoiceDate: null, createdAt: serverTimestamp(),
-    });
+    await httpsCallable(a.fns, "saveOrder")(newOrder(vendorId));
     const orders = await getDocs(collection(a.db, `businesses/${a.businessId}/orders`));
     expect(orders.size).toBe(1);
+  });
+
+  it("saveOrder numbers orders, computes amounts, and fills the item list", async () => {
+    const save = httpsCallable<Record<string, unknown>, { id: string; number: number }>(a.fns, "saveOrder");
+    const second = await save(newOrder(vendorId, {
+      items: [
+        { name: "  Cement ", qty: 50, unit: "bag", rate: 1450 },
+        { name: "Binding wire", qty: 3, unit: "kg", rate: 0.1 },
+      ],
+    }));
+    expect(second.data.number).toBe(2);
+
+    const o = (await getDoc(doc(a.db, `businesses/${a.businessId}/orders/${second.data.id}`))).data()!;
+    expect(o).toMatchObject({
+      number: 2, vendorId, vendorName: "Karachi Cotton", amount: 72_500.3,
+      items: [
+        { name: "Cement", qty: 50, unit: "bag", rate: 1450, amount: 72_500 },
+        { name: "Binding wire", qty: 3, unit: "kg", rate: 0.1, amount: 0.3 },
+      ],
+    });
+
+    const items = await getDocs(collection(a.db, `businesses/${a.businessId}/items`));
+    expect(items.docs.map((d) => d.data().name).sort()).toEqual(["Binding wire", "Cement", "Cotton"]);
+
+    // Numbers never repeat, even after a delete.
+    await httpsCallable(a.fns, "deleteOrder")({ orderId: second.data.id });
+    expect((await save(newOrder(vendorId))).data.number).toBe(3);
+  });
+
+  it("saveOrder rejects bad input with a readable message", async () => {
+    const save = httpsCallable(a.fns, "saveOrder");
+    const bad = (over: Record<string, unknown>) => save(newOrder(vendorId, over));
+    await expect(bad({ items: [] })).rejects.toThrow("Add at least one item.");
+    await expect(bad({ items: [{ name: "X", qty: 0, unit: "", rate: 1 }] }))
+      .rejects.toThrow("Item 1 quantity must be more than 0.");
+    await expect(bad({ items: [{ name: "", qty: 1, unit: "", rate: 1 }] }))
+      .rejects.toThrow("Enter item 1 name.");
+    await expect(bad({ orderDate: "2026-13-45" })).rejects.toMatchObject({ code: "functions/invalid-argument" });
+    await expect(bad({ vendorId: "nope" })).rejects.toMatchObject({ code: "functions/not-found" });
+    // Another business can't use A's vendor.
+    await expect(httpsCallable(b.fns, "saveOrder")(newOrder(vendorId)))
+      .rejects.toMatchObject({ code: "functions/not-found" });
+  });
+
+  it("editing an order logs each change; deleting it moves its payments to the account", async () => {
+    const save = httpsCallable<Record<string, unknown>, { id: string; number: number }>(a.fns, "saveOrder");
+    const { data } = await save(newOrder(vendorId));
+    await save(newOrder(vendorId, {
+      orderId: data.id, status: "received", invoiceAmount: 2600, invoiceNo: "B-1",
+      items: [{ name: "Cotton", qty: 208, unit: "yd", rate: 12.5 }],
+    }));
+    const log = await getDocs(collection(a.db, `businesses/${a.businessId}/auditLog`));
+    const fields = log.docs.filter((d) => d.data().entityId === data.id).map((d) => d.data().field).sort();
+    expect(fields).toEqual(["amount", "invoiceAmount", "invoiceNo", "items", "status"]);
+
+    const payments = collection(a.db, `businesses/${a.businessId}/payments`);
+    const pay = await addDoc(payments, {
+      orderId: data.id, vendorId, vendorName: "Karachi Cotton", amount: 1000, method: "cash",
+      date: "2026-09-02", bankAccount: null, bankRef: null, chequeNo: null, chequeBank: null,
+      chequeDate: null, clearedStatus: null, clearedDate: null, cashTo: null, createdAt: serverTimestamp(),
+    });
+    await httpsCallable(a.fns, "deleteOrder")({ orderId: data.id });
+    expect((await getDoc(pay)).data()).toMatchObject({ orderId: null, amount: 1000 });
+    expect((await getDoc(doc(a.db, `businesses/${a.businessId}/orders/${data.id}`))).exists()).toBe(false);
+
+    await expect(httpsCallable(b.fns, "deleteOrder")({ orderId: data.id }))
+      .rejects.toMatchObject({ code: "functions/not-found" });
   });
 
   it("owner B, with a real token, cannot read or write owner A's data", async () => {
@@ -112,7 +181,7 @@ describe("signup, provisioning and isolation", () => {
     const anon = client("anon");
     const res = await httpsCallable<{ token: string }, Record<string, unknown>>(anon.fns, "resolveVendorLink")({ token: data.token });
     expect(res.data).toMatchObject({ businessName: "A Traders", vendorName: "Karachi Cotton" });
-    expect((res.data.orders as unknown[]).length).toBe(1);
+    expect((res.data.orders as { number: number }[]).map((o) => o.number).sort()).toEqual([1, 3]);
     expect(JSON.stringify(res.data)).not.toContain("internal note");
 
     await expect(

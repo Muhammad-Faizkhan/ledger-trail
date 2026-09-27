@@ -44,33 +44,15 @@ service cloud.firestore {
           && isText(request.resource.data.notes, 2000);
       }
 
-      function validOrder(d) {
-        return exactKeys(d, ['vendorId', 'vendorName', 'description', 'qty', 'rate', 'amount',
-                             'orderDate', 'status', 'invoiceAmount', 'invoiceDate', 'createdAt'])
-          && d.vendorId is string
-          && exists(/databases/$(database)/documents/businesses/$(businessId)/vendors/$(d.vendorId))
-          && isText(d.vendorName, 120)
-          && isText(d.description, 500) && d.description.size() > 0
-          && isNum(d.qty) && d.qty > 0
-          && isNum(d.rate) && d.rate >= 0
-          // The stored total can never disagree with qty * rate.
-          && d.amount == d.qty * d.rate
-          && isDate(d.orderDate)
-          && d.status in ['ordered', 'confirmed', 'received']
-          && (d.invoiceAmount == null || (isNum(d.invoiceAmount) && d.invoiceAmount >= 0))
-          && isOptDate(d.invoiceDate)
-          && d.createdAt is timestamp;
+      // Orders, the PO counter and the saved item list are written only by the
+      // saveOrder / deleteOrder Cloud Functions (Admin SDK): rules can't loop
+      // over an items array or hand out sequential numbers safely.
+      match /orders/{orderId} {
+        allow read: if isTenant(businessId);
       }
 
-      match /orders/{orderId} {
-        allow read, delete: if isTenant(businessId);
-        allow create: if isTenant(businessId)
-          && validOrder(request.resource.data)
-          && request.resource.data.createdAt == request.time;
-        allow update: if isTenant(businessId)
-          && validOrder(request.resource.data)
-          && request.resource.data.vendorId == resource.data.vendorId
-          && request.resource.data.createdAt == resource.data.createdAt;
+      match /items/{itemId} {
+        allow read: if isTenant(businessId);
       }
 
       function validPayment(d) {
@@ -92,14 +74,17 @@ service cloud.firestore {
 
       match /payments/{paymentId} {
         allow read, delete: if isTenant(businessId);
-        // A payment must point at an existing order of this business, and
-        // its vendor must be that order's vendor.
+        // A payment belongs to an existing vendor of this business. It's either
+        // against the vendor's account (orderId null) or pinned to one of that
+        // vendor's orders.
         allow create: if isTenant(businessId)
           && validPayment(request.resource.data)
           && request.resource.data.clearedStatus != 'cleared'
-          && request.resource.data.orderId is string
-          && request.resource.data.vendorId
-               == get(/databases/$(database)/documents/businesses/$(businessId)/orders/$(request.resource.data.orderId)).data.vendorId
+          && exists(/databases/$(database)/documents/businesses/$(businessId)/vendors/$(request.resource.data.vendorId))
+          && (request.resource.data.orderId == null
+              || (request.resource.data.orderId is string
+                  && request.resource.data.vendorId
+                       == get(/databases/$(database)/documents/businesses/$(businessId)/orders/$(request.resource.data.orderId)).data.vendorId))
           && request.resource.data.createdAt == request.time;
         // The only in-place edit is clearing a cheque.
         allow update: if isTenant(businessId)

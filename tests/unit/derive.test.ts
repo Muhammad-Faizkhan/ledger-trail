@@ -1,23 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
-  audit, methodLabel, orderBalance, orderMessage, paidByOrder, paymentsByOrder,
-  recentActivity, totalOutstanding, vendorStatement, vendorTotals,
+  allocatePayments, audit, methodLabel, orderBalance, orderMessage, recentActivity,
+  totalOutstanding, vendorStatement, vendorTotals,
 } from "@/lib/derive";
-import type { Order, Payment, Vendor } from "@/lib/types";
+import type { Order, OrderItem, Payment, Vendor } from "@/lib/types";
 
 const ts = (ms: number) => ({ toMillis: () => ms }) as unknown as Order["createdAt"];
 
+const item = (i: Partial<OrderItem> = {}): OrderItem => ({
+  name: "Steel rods", qty: 1, unit: "pcs", rate: 100, amount: 100, ...i,
+});
+
 function order(o: Partial<Order> & Pick<Order, "id">): Order {
   return {
-    vendorId: "v1", vendorName: "Acme", description: "Steel rods", qty: 1, rate: 100,
-    amount: 100, orderDate: "2026-09-01", status: "ordered", invoiceAmount: null,
-    invoiceDate: null, createdAt: null, ...o,
+    number: 1, vendorId: "v1", vendorName: "Acme", items: [item()], amount: 100,
+    orderDate: "2026-09-01", expectedDate: null, status: "ordered", invoiceAmount: null,
+    invoiceNo: null, invoiceDate: null, note: "", createdAt: null, ...o,
   };
 }
 
-function payment(p: Partial<Payment> & Pick<Payment, "id" | "orderId">): Payment {
+function payment(p: Partial<Payment> & Pick<Payment, "id">): Payment {
   return {
-    vendorId: "v1", vendorName: "Acme", amount: 50, method: "cash", date: "2026-09-02",
+    orderId: null, vendorId: "v1", vendorName: "Acme", amount: 50, method: "cash", date: "2026-09-02",
     bankAccount: null, bankRef: null, chequeNo: null, chequeBank: null, chequeDate: null,
     clearedStatus: null, clearedDate: null, cashTo: null, createdAt: null, ...p,
   };
@@ -25,31 +29,111 @@ function payment(p: Partial<Payment> & Pick<Payment, "id" | "orderId">): Payment
 
 const vendor: Vendor = { id: "v1", name: "Acme", phone: "03001234567", notes: "", createdAt: null };
 
-describe("per-order payments", () => {
-  const payments = [
-    payment({ id: "p1", orderId: "o1", amount: 0.1 }),
-    payment({ id: "p2", orderId: "o1", amount: 0.2 }),
-    payment({ id: "p3", orderId: "o2", amount: 5 }),
-  ];
+describe("allocatePayments", () => {
+  const bal = (orders: Order[], payments: Payment[]) => {
+    const a = allocatePayments(orders, payments);
+    return Object.fromEntries(orders.map((o) => [o.id, orderBalance(o, a)]));
+  };
 
-  it("paidByOrder sums per order", () => {
-    const m = paidByOrder(payments);
-    expect(m.get("o1")).toBeCloseTo(0.3);
-    expect(m.get("o2")).toBe(5);
-    expect(m.has("o3")).toBe(false);
+  it("account payments clear the oldest orders first", () => {
+    const orders = [
+      order({ id: "new", number: 3, orderDate: "2026-09-10", amount: 300 }),
+      order({ id: "old", number: 1, orderDate: "2026-09-01", amount: 100 }),
+      order({ id: "mid", number: 2, orderDate: "2026-09-01", amount: 200 }),
+    ];
+    const a = allocatePayments(orders, [payment({ id: "p1", amount: 250 })]);
+    expect(orderBalance(orders[1], a)).toBe(0);
+    expect(orderBalance(orders[2], a)).toBe(50);
+    expect(orderBalance(orders[0], a)).toBe(300);
+    expect(a.applied).toEqual([
+      { paymentId: "p1", orderId: "old", amount: 100 },
+      { paymentId: "p1", orderId: "mid", amount: 150 },
+    ]);
+    expect(a.byOrder.get("mid")).toEqual({ paid: 150, balance: 50 });
+    expect(a.credit.size).toBe(0);
   });
 
-  it("paymentsByOrder groups in input order", () => {
-    const m = paymentsByOrder(payments);
-    expect(m.get("o1")!.map((p) => p.id)).toEqual(["p1", "p2"]);
-    expect(m.get("o2")!.map((p) => p.id)).toEqual(["p3"]);
+  it("older payments are applied before newer ones", () => {
+    const orders = [order({ id: "o1", amount: 100 }), order({ id: "o2", number: 2, amount: 100 })];
+    const a = allocatePayments(orders, [
+      payment({ id: "later", date: "2026-09-05", amount: 100 }),
+      payment({ id: "earlier", date: "2026-09-03", amount: 60 }),
+    ]);
+    expect(a.applied).toEqual([
+      { paymentId: "earlier", orderId: "o1", amount: 60 },
+      { paymentId: "later", orderId: "o1", amount: 40 },
+      { paymentId: "later", orderId: "o2", amount: 60 },
+    ]);
   });
 
-  it("orderBalance is rounded and handles unpaid orders", () => {
-    const paid = paidByOrder(payments);
-    expect(orderBalance(order({ id: "o1", amount: 0.3 }), paid)).toBe(0);
-    expect(orderBalance(order({ id: "o3", amount: 42 }), paid)).toBe(42);
-    expect(orderBalance(order({ id: "o2", amount: 4 }), paid)).toBe(-1);
+  it("a pinned payment pays its own order first, even if it isn't the oldest", () => {
+    const orders = [
+      order({ id: "old", amount: 100 }),
+      order({ id: "pinned", number: 2, orderDate: "2026-09-05", amount: 100 }),
+    ];
+    // The account payment is older, but the pinned one has already covered its order.
+    expect(bal(orders, [
+      payment({ id: "acct", date: "2026-09-02", amount: 150 }),
+      payment({ id: "pin", orderId: "pinned", date: "2026-09-06", amount: 100 }),
+    ])).toEqual({ old: 0, pinned: 0 });
+
+    const a = allocatePayments(orders, [payment({ id: "pin", orderId: "pinned", amount: 40 }), payment({ id: "acct", amount: 30 })]);
+    expect(a.byOrder.get("pinned")).toEqual({ paid: 40, balance: 60 });
+    expect(a.byOrder.get("old")).toEqual({ paid: 30, balance: 70 });
+  });
+
+  it("the unused part of a pinned payment goes to the oldest other orders", () => {
+    const orders = [
+      order({ id: "old", amount: 100 }),
+      order({ id: "pinned", number: 2, orderDate: "2026-09-05", amount: 100 }),
+    ];
+    const a = allocatePayments(orders, [payment({ id: "pin", orderId: "pinned", amount: 150 })]);
+    expect(a.applied).toEqual([
+      { paymentId: "pin", orderId: "pinned", amount: 100 },
+      { paymentId: "pin", orderId: "old", amount: 50 },
+    ]);
+  });
+
+  it("overpayment becomes credit with that vendor", () => {
+    const orders = [order({ id: "o1", amount: 100 })];
+    const a = allocatePayments(orders, [
+      payment({ id: "p1", amount: 80 }),
+      payment({ id: "p2", amount: 70 }),
+    ]);
+    expect(a.byOrder.get("o1")).toEqual({ paid: 100, balance: 0 });
+    expect(a.credit.get("v1")).toBe(50);
+  });
+
+  it("a payment with no orders yet is all credit", () => {
+    const a = allocatePayments([], [payment({ id: "p1", amount: 500 })]);
+    expect(a.applied).toEqual([]);
+    expect(a.credit.get("v1")).toBe(500);
+  });
+
+  it("a payment pinned to a deleted order counts against the account", () => {
+    const orders = [order({ id: "o2", amount: 100 })];
+    const a = allocatePayments(orders, [payment({ id: "p1", orderId: "deleted", amount: 60 })]);
+    expect(a.byOrder.get("o2")).toEqual({ paid: 60, balance: 40 });
+  });
+
+  it("never mixes vendors", () => {
+    const orders = [order({ id: "a1", amount: 100 }), order({ id: "b1", vendorId: "v2", amount: 100 })];
+    const a = allocatePayments(orders, [
+      payment({ id: "p1", vendorId: "v2", amount: 150 }),
+      // Pinned across vendors (shouldn't happen): treated as an account payment for its own vendor.
+      payment({ id: "p2", orderId: "b1", vendorId: "v1", amount: 30 }),
+    ]);
+    expect(a.byOrder.get("a1")).toEqual({ paid: 30, balance: 70 });
+    expect(a.byOrder.get("b1")).toEqual({ paid: 100, balance: 0 });
+    expect(a.credit.get("v2")).toBe(50);
+    expect(a.credit.has("v1")).toBe(false);
+  });
+
+  it("has no float drift", () => {
+    const orders = [order({ id: "o1", amount: 0.3 })];
+    const a = allocatePayments(orders, [payment({ id: "p1", amount: 0.1 }), payment({ id: "p2", amount: 0.2 })]);
+    expect(a.byOrder.get("o1")).toEqual({ paid: 0.3, balance: 0 });
+    expect(a.credit.size).toBe(0);
   });
 });
 
@@ -62,7 +146,7 @@ describe("totals", () => {
   const payments = [
     payment({ id: "p1", orderId: "o1", amount: 60 }),
     payment({ id: "p2", orderId: "o3", vendorId: "v2", amount: 0.2 }),
-    payment({ id: "p3", orderId: "x", vendorId: "v3", amount: 10 }),
+    payment({ id: "p3", vendorId: "v3", amount: 10 }),
   ];
 
   it("vendorTotals per vendor, including payment-only vendors", () => {
@@ -94,32 +178,46 @@ describe("audit", () => {
     expect(r.mismatches.map((o) => o.id)).toEqual(["bad"]);
   });
 
-  it("lists unpaid orders older than 30 days, oldest first", () => {
+  it("lists unpaid orders older than 30 days, oldest first, after account payments", () => {
     const r = audit(
       [
-        order({ id: "exactly30", orderDate: "2026-08-27" }),
-        order({ id: "31", orderDate: "2026-08-26" }),
-        order({ id: "60", orderDate: "2026-07-28" }),
-        order({ id: "paidOff", orderDate: "2026-07-01" }),
+        order({ id: "exactly30", number: 4, orderDate: "2026-08-27" }),
+        order({ id: "31", number: 3, orderDate: "2026-08-26" }),
+        order({ id: "60", number: 2, orderDate: "2026-07-28" }),
+        order({ id: "paidOff", number: 1, orderDate: "2026-07-01" }),
       ],
-      [payment({ id: "p", orderId: "paidOff", amount: 100 })],
+      [payment({ id: "p", amount: 150 })],
       asOf,
     );
     expect(r.overdue.map((x) => [x.order.id, x.days, x.balance])).toEqual([
-      ["60", 60, 100],
+      ["60", 60, 50],
       ["31", 31, 100],
     ]);
+  });
+
+  it("lists orders not received by their expected date", () => {
+    const r = audit(
+      [
+        order({ id: "late", expectedDate: "2026-09-20" }),
+        order({ id: "today", expectedDate: asOf }),
+        order({ id: "arrived", expectedDate: "2026-09-01", status: "received" }),
+        order({ id: "noDate" }),
+      ],
+      [],
+      asOf,
+    );
+    expect(r.lateDeliveries.map((x) => [x.order.id, x.days])).toEqual([["late", 6]]);
   });
 
   it("tracks pending and stale cheques by cheque date, falling back to payment date", () => {
     const r = audit(
       [order({ id: "o1" })],
       [
-        payment({ id: "cleared", orderId: "o1", method: "cheque", chequeDate: "2026-01-01", clearedStatus: "cleared" }),
-        payment({ id: "fresh", orderId: "o1", method: "cheque", chequeDate: "2026-09-19", clearedStatus: "issued" }),
-        payment({ id: "stale", orderId: "o1", method: "cheque", chequeDate: "2026-09-10", date: "2026-09-25", clearedStatus: "issued" }),
-        payment({ id: "noDate", orderId: "o1", method: "cheque", chequeDate: null, date: "2026-09-01" }),
-        payment({ id: "cash", orderId: "o1", method: "cash", date: "2026-01-01" }),
+        payment({ id: "cleared", method: "cheque", chequeDate: "2026-01-01", clearedStatus: "cleared" }),
+        payment({ id: "fresh", method: "cheque", chequeDate: "2026-09-19", clearedStatus: "issued" }),
+        payment({ id: "stale", method: "cheque", chequeDate: "2026-09-10", date: "2026-09-25", clearedStatus: "issued" }),
+        payment({ id: "noDate", method: "cheque", chequeDate: null, date: "2026-09-01" }),
+        payment({ id: "cash", method: "cash", date: "2026-01-01" }),
       ],
       asOf,
     );
@@ -129,23 +227,18 @@ describe("audit", () => {
       ["stale", 16],
     ]);
   });
-
-  it("finds payments whose order no longer exists", () => {
-    const r = audit([order({ id: "o1" })], [
-      payment({ id: "p1", orderId: "o1" }),
-      payment({ id: "p2", orderId: "gone" }),
-    ], asOf);
-    expect(r.orphanPayments.map((p) => p.id)).toEqual(["p2"]);
-  });
 });
 
 describe("recentActivity", () => {
   it("merges orders and payments newest first, pending writes on top, with a limit", () => {
     const items = recentActivity(
-      [order({ id: "o1", createdAt: ts(100) }), order({ id: "o2", createdAt: ts(300) })],
       [
-        payment({ id: "p1", orderId: "o1", createdAt: ts(200) }),
-        payment({ id: "p2", orderId: "o1", createdAt: null, method: "cash", cashTo: "Ali" }),
+        order({ id: "o1", createdAt: ts(100) }),
+        order({ id: "o2", number: 12, createdAt: ts(300), items: [item({ name: "Cement" }), item(), item(), item()] }),
+      ],
+      [
+        payment({ id: "p1", createdAt: ts(200) }),
+        payment({ id: "p2", createdAt: null, method: "cash", cashTo: "Ali" }),
       ],
       3,
     );
@@ -155,6 +248,7 @@ describe("recentActivity", () => {
       ["payment", "p1"],
     ]);
     expect(items[0].label).toBe("Cash to Ali");
+    expect(items[1].label).toBe("PO-0012 · Cement, Steel rods +2 more");
   });
 
   it("defaults to 8 items", () => {
@@ -172,35 +266,56 @@ describe("methodLabel", () => {
     [{ method: "cash", cashTo: "Ali" }, "Cash to Ali"],
     [{ method: "cash" }, "Cash"],
   ] as [Partial<Payment>, string][])("%j", (p, expected) => {
-    expect(methodLabel(payment({ id: "p", orderId: "o", ...p }))).toBe(expected);
+    expect(methodLabel(payment({ id: "p", ...p }))).toBe(expected);
   });
 });
 
 describe("messages", () => {
-  it("orderMessage", () => {
-    const o = order({ id: "o1", description: "Cement", qty: 3, rate: 0.1, amount: 0.3, status: "confirmed" });
+  it("orderMessage lists every item with its unit", () => {
+    const o = order({
+      id: "o1", number: 7, amount: 72_800.3, expectedDate: "2026-09-30", note: "Deliver to site 2",
+      items: [
+        item({ name: "Cement", qty: 50, unit: "bag", rate: 1450, amount: 72_500 }),
+        item({ name: "Binding wire", qty: 3, unit: "kg", rate: 100.1, amount: 300.3 }),
+      ],
+    });
     expect(orderMessage(o, "Faiz Traders")).toBe(
       [
-        "*Order from Faiz Traders*",
-        "Item: Cement",
-        "Qty: 3 × Rs 0.1 = Rs 0.3",
-        "Order date: 2026-09-01",
-        "Status: confirmed",
+        "*Purchase order PO-0007*",
+        "From: Faiz Traders",
+        "Date: 2026-09-01",
+        "Deliver by: 2026-09-30",
+        "",
+        "1. Cement — 50 bag × Rs 1,450 = Rs 72,500",
+        "2. Binding wire — 3 kg × Rs 100.1 = Rs 300.3",
+        "",
+        "*Total: Rs 72,800.3*",
+        "Note: Deliver to site 2",
       ].join("\n"),
     );
-    expect(orderMessage(o, "")).toContain("*Order from us*");
+    const plain = orderMessage(order({ id: "o2" }), "");
+    expect(plain).toContain("From: —");
+    expect(plain).not.toContain("Deliver by");
+    expect(plain).not.toContain("Note:");
   });
 
   it("vendorStatement lists only this vendor's entries in date order", () => {
     const orders = [
-      order({ id: "o2", orderDate: "2026-09-10", description: "Bricks", qty: 2, rate: 50, amount: 100, invoiceAmount: 110, invoiceDate: "2026-09-11" }),
-      order({ id: "o1", orderDate: "2026-09-01", description: "Cement", qty: 1, rate: 200, amount: 200, invoiceAmount: 200 }),
-      order({ id: "ox", vendorId: "v2", description: "Other vendor" }),
+      order({
+        id: "o2", number: 2, orderDate: "2026-09-10", amount: 100, invoiceAmount: 110,
+        invoiceNo: "B-9", invoiceDate: "2026-09-11",
+        items: [item({ name: "Bricks", qty: 2, unit: "pcs", rate: 50, amount: 100 })],
+      }),
+      order({
+        id: "o1", number: 1, orderDate: "2026-09-01", amount: 200, invoiceAmount: 200,
+        items: [item({ name: "Cement", qty: 1, unit: "bag", rate: 200, amount: 200 })],
+      }),
+      order({ id: "ox", vendorId: "v2" }),
     ];
     const payments = [
-      payment({ id: "p2", orderId: "o1", date: "2026-09-05", method: "cheque", chequeNo: "7", amount: 100, clearedStatus: "issued" }),
+      payment({ id: "p2", date: "2026-09-05", method: "cheque", chequeNo: "7", amount: 100, clearedStatus: "issued" }),
       payment({ id: "p1", orderId: "o1", date: "2026-09-02", method: "bank", bankRef: "R1", amount: 50 }),
-      payment({ id: "px", orderId: "ox", vendorId: "v2", amount: 999 }),
+      payment({ id: "px", vendorId: "v2", amount: 999 }),
     ];
     expect(vendorStatement(vendor, orders, payments, "Faiz Traders", "2026-09-26")).toBe(
       [
@@ -209,12 +324,12 @@ describe("messages", () => {
         "As of: 2026-09-26",
         "",
         "*Orders*",
-        "2026-09-01 · Cement",
-        "   1 × Rs 200 = Rs 200 (ordered)",
-        "   Invoice: Rs 200",
-        "2026-09-10 · Bricks",
-        "   2 × Rs 50 = Rs 100 (ordered)",
-        "   Invoice: Rs 110 on 2026-09-11 ⚠ differs from order",
+        "2026-09-01 · PO-0001 · Rs 200 (ordered)",
+        "   Cement: 1 bag × Rs 200",
+        "   Bill: Rs 200",
+        "2026-09-10 · PO-0002 · Rs 100 (ordered)",
+        "   Bricks: 2 pcs × Rs 50",
+        "   Bill #B-9: Rs 110 on 2026-09-11 ⚠ differs from order",
         "Total ordered: Rs 300",
         "",
         "*Payments*",
@@ -222,16 +337,18 @@ describe("messages", () => {
         "2026-09-05 · Cheque #7 · Rs 100 (not yet cleared)",
         "Total paid: Rs 150",
         "",
-        "*Outstanding balance: Rs 150*",
+        "*Balance due: Rs 150*",
       ].join("\n"),
     );
   });
 
-  it("vendorStatement with no activity", () => {
+  it("vendorStatement with no activity, and with an advance", () => {
     const s = vendorStatement(vendor, [], [], "", "2026-09-26");
     expect(s).toContain("From: —");
     expect(s).toContain("*Orders*\nNone");
     expect(s).toContain("*Payments*\nNone");
-    expect(s).toContain("*Outstanding balance: Rs 0*");
+    expect(s).toContain("*Balance due: Rs 0*");
+    expect(vendorStatement(vendor, [], [payment({ id: "p", amount: 500 })], "", "2026-09-26"))
+      .toContain("*Paid in advance: Rs 500*");
   });
 });
