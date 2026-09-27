@@ -55,7 +55,7 @@ const rs = (n: number) => `Rs ${n.toLocaleString("en-PK", { maximumFractionDigit
 function logEntry(
   tx: Transaction, biz: DocumentReference, uid: string,
   entityId: string, field: string, oldValue: unknown, newValue: unknown,
-  entity: "order" | "payment" = "order",
+  entity: "order" | "payment" | "vendor" = "order",
 ) {
   tx.create(biz.collection("auditLog").doc(), {
     entity, entityId, field, oldValue: oldValue ?? null, newValue: newValue ?? null,
@@ -170,6 +170,39 @@ export const deleteOrder = onCall(async (req) => {
     logEntry(tx, biz, uid, orderId, "deleted",
       `${order.get("vendorName")}: ${poNumber(order.get("number"))}, ${rs(order.get("amount"))} (${order.get("orderDate")})`,
       null);
+  });
+  return { ok: true };
+});
+
+/**
+ * Renames a vendor. The name is copied onto each of their orders and payments
+ * (so lists and messages don't need a lookup), so they're all updated in the
+ * same transaction. A saveOrder running at the same time reads the vendor in
+ * its own transaction, so it retries and picks up the new name.
+ */
+export const renameVendor = onCall(async (req) => {
+  const businessId = requireBusinessId(req.auth);
+  const uid = req.auth!.uid;
+  const vendorId = requireString(req.data?.vendorId, "vendorId");
+  const raw = req.data?.name;
+  const name = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+  if (!name) throw new HttpsError("invalid-argument", "Enter the vendor's name.");
+  if (name.length > 120) throw new HttpsError("invalid-argument", "The name is too long (at most 120 characters).");
+
+  const biz = db.doc(`businesses/${businessId}`);
+  const vendorRef = biz.collection("vendors").doc(vendorId);
+  await db.runTransaction(async (tx) => {
+    const vendor = await tx.get(vendorRef);
+    if (!vendor.exists) throw new HttpsError("not-found", "Vendor not found.");
+    const old = vendor.get("name");
+    if (old === name) return;
+    const [orders, payments] = await Promise.all([
+      tx.get(biz.collection("orders").where("vendorId", "==", vendorId)),
+      tx.get(biz.collection("payments").where("vendorId", "==", vendorId)),
+    ]);
+    tx.update(vendorRef, { name });
+    for (const d of [...orders.docs, ...payments.docs]) tx.update(d.ref, { vendorName: name });
+    logEntry(tx, biz, uid, vendorId, "name", old, name, "vendor");
   });
   return { ok: true };
 });

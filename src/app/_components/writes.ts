@@ -53,6 +53,20 @@ export function addVendor(businessId: string, v: { name: string; phone: string }
   return { id: ref.id, saved };
 }
 
+/** Name, phone and notes in one go. A new name is also copied onto the vendor's orders and payments. */
+export async function editVendor(
+  businessId: string, uid: string, vendor: Vendor, changes: Pick<Vendor, "name" | "phone" | "notes">,
+) {
+  const name = changes.name.trim();
+  if (name !== vendor.name) {
+    await httpsCallable(functions, "renameVendor")({ vendorId: vendor.id, name });
+  }
+  const rest = { phone: changes.phone.trim(), notes: changes.notes.trim() };
+  if (rest.phone !== vendor.phone || rest.notes !== vendor.notes) {
+    await updateVendor(businessId, uid, vendor, rest);
+  }
+}
+
 export async function updateVendor(
   businessId: string, uid: string, vendor: Vendor, changes: Pick<Vendor, "phone" | "notes">,
 ) {

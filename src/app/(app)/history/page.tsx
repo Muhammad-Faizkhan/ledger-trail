@@ -21,6 +21,7 @@ const FIELD_LABELS: Record<string, string> = {
   invoiceAmount: "Bill amount",
   invoiceNo: "Bill no.",
   invoiceDate: "Bill date",
+  name: "Name",
   phone: "Phone",
   notes: "Notes",
   clearedStatus: "Cheque",

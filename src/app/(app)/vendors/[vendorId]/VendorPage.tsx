@@ -1,16 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { allocatePayments, byPaymentAge, orderBalance, vendorStatement, vendorTotals } from "@/lib/derive";
 import { itemsSummary, poNumber, today, whatsAppUrl } from "@/lib/format";
 import type { Vendor } from "@/lib/types";
 import { useSession } from "@/app/_components/Gate";
 import { PaymentRow } from "@/app/_components/PaymentRow";
 import {
-  Button, Card, Chips, EmptyState, ErrorText, Field, LinkButton, Money, PageHeader, StatusBadge, TextArea, useAction,
+  Button, Card, Chips, EmptyState, ErrorText, LinkButton, Money, PageHeader, StatusBadge, useAction,
 } from "@/app/_components/ui";
-import { createVendorLink, revokeVendorLink, updateVendor, vendorLinkUrl } from "@/app/_components/writes";
+import { createVendorLink, revokeVendorLink, vendorLinkUrl } from "@/app/_components/writes";
 
 type Tab = "orders" | "payments" | "details";
 
@@ -32,7 +32,8 @@ export function VendorPage({ vendorId }: { vendorId: string }) {
   return (
     <>
       <PageHeader back={{ href: "/vendors", label: "Vendors" }} title={vendor.name}
-        subtitle={vendor.phone && <a href={`tel:${vendor.phone}`} className="text-accent">{vendor.phone}</a>} />
+        subtitle={vendor.phone && <a href={`tel:${vendor.phone}`} className="text-accent">{vendor.phone}</a>}
+        action={<LinkButton href={`/vendors/${vendor.id}/edit`} variant="secondary">Edit</LinkButton>} />
 
       <Card>
         <div className="grid grid-cols-3 gap-2 text-center">
@@ -112,40 +113,20 @@ function Details({ vendor }: { vendor: Vendor }) {
           <LinkButton href={`/vendors/${vendor.id}/statement`} variant="secondary">Print / PDF</LinkButton>
         </div>
       </Card>
-      <EditVendor vendor={vendor} />
+      <Card className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">Contact and notes</h2>
+          <LinkButton href={`/vendors/${vendor.id}/edit`} variant="secondary">Edit</LinkButton>
+        </div>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+          <dt className="text-muted">Name</dt><dd className="font-medium">{vendor.name}</dd>
+          <dt className="text-muted">Phone</dt><dd>{vendor.phone || <span className="text-muted">Not added</span>}</dd>
+          <dt className="text-muted">Notes</dt>
+          <dd className="whitespace-pre-wrap">{vendor.notes || <span className="text-muted">None</span>}</dd>
+        </dl>
+      </Card>
       <VendorLink vendor={vendor} />
     </>
-  );
-}
-
-function EditVendor({ vendor }: { vendor: Vendor }) {
-  const { businessId, uid } = useSession();
-  const [phone, setPhone] = useState(vendor.phone);
-  const [notes, setNotes] = useState(vendor.notes);
-  const [saved, setSaved] = useState(false);
-  const { busy, error, run } = useAction();
-  const changed = phone.trim() !== vendor.phone || notes.trim() !== vendor.notes;
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (await run(() => updateVendor(businessId, uid, vendor, { phone: phone.trim(), notes: notes.trim() }))) setSaved(true);
-  }
-
-  return (
-    <Card>
-      <form onSubmit={submit} className="flex flex-col gap-3">
-        <h2 className="font-semibold">Contact and notes</h2>
-        <Field label="Phone / WhatsApp" type="tel" maxLength={30} value={phone}
-          onChange={(e) => { setPhone(e.target.value); setSaved(false); }} placeholder="0300 1234567" />
-        <TextArea label="Notes (only you see these)" maxLength={2000} value={notes}
-          onChange={(e) => { setNotes(e.target.value); setSaved(false); }} />
-        <ErrorText>{error}</ErrorText>
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={busy || !changed}>{busy ? "Saving…" : "Save"}</Button>
-          {saved && !changed && <span className="text-sm text-success">Saved</span>}
-        </div>
-      </form>
-    </Card>
   );
 }
 

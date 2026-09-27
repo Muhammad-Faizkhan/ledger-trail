@@ -198,4 +198,38 @@ describe("signup, provisioning and isolation", () => {
   });
 });
 
+describe("renaming a vendor", () => {
+  it("updates the vendor, all their orders and payments, and logs it", async () => {
+    const a = await signUp("owner-rename");
+    const other = await signUp("owner-other");
+    const base = `businesses/${a.businessId}`;
+    const v = await addDoc(collection(a.db, `${base}/vendors`), {
+      name: "Old Name", phone: "", notes: "", createdAt: serverTimestamp(),
+    });
+    await httpsCallable(a.fns, "saveOrder")(newOrder(v.id));
+    await httpsCallable(a.fns, "saveOrder")(newOrder(v.id));
+    await addDoc(collection(a.db, `${base}/payments`), {
+      orderId: null, vendorId: v.id, vendorName: "Old Name", amount: 500, method: "cash",
+      date: "2026-09-02", bankAccount: null, bankRef: null, chequeNo: null, chequeBank: null,
+      chequeDate: null, clearedStatus: null, clearedDate: null, cashTo: null, createdAt: serverTimestamp(),
+    });
+
+    const rename = httpsCallable(a.fns, "renameVendor");
+    await expect(rename({ vendorId: v.id, name: "   " })).rejects.toThrow("Enter the vendor's name.");
+    await expect(httpsCallable(other.fns, "renameVendor")({ vendorId: v.id, name: "Hacked" }))
+      .rejects.toMatchObject({ code: "functions/not-found" });
+    // Clients still can't change the name directly.
+    await denied(updateDoc(v, { name: "Direct" }));
+
+    await rename({ vendorId: v.id, name: "  Nadeem   Sons " });
+    expect((await getDoc(v)).get("name")).toBe("Nadeem Sons");
+    const orders = await getDocs(collection(a.db, `${base}/orders`));
+    const payments = await getDocs(collection(a.db, `${base}/payments`));
+    expect([...orders.docs, ...payments.docs].map((d) => d.get("vendorName"))).toEqual(["Nadeem Sons", "Nadeem Sons", "Nadeem Sons"]);
+    const log = await getDocs(collection(a.db, `${base}/auditLog`));
+    expect(log.docs.map((d) => d.data()).find((e) => e.field === "name"))
+      .toMatchObject({ entity: "vendor", entityId: v.id, oldValue: "Old Name", newValue: "Nadeem Sons" });
+  });
+});
+
 export type { Firestore, Functions };

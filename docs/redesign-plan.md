@@ -221,6 +221,10 @@ Phases 0–6 are built. Phase 7 (going live) is next and needs the owner to enab
   straight from Save would be blocked as a pop-up by some browsers.
 - **Deleting an order is always allowed.** Its pinned payments move to the vendor's
   account (logged in history), instead of blocking the delete.
+- **Vendors can be renamed** (added 2026-09-27 at the owner's request): an **Edit**
+  button on the vendor page opens name, phone and notes. The `renameVendor` function
+  updates the vendor and the name copied onto all their orders and payments in one
+  transaction, and logs it. Clients still can't change the name directly.
 - **Vendor tabs are Orders · Payments · Details.** Details holds the statement
   (WhatsApp and Print), phone and notes, and the vendor link.
 
@@ -235,7 +239,7 @@ Phases 0–6 are built. Phase 7 (going live) is next and needs the owner to enab
   (`functions/src/index.ts`, input checks in `functions/src/orderInput.ts`).
 - Which bills each payment paid is worked out by `allocatePayments` in
   `src/lib/derive.ts`; nothing about it is stored.
-- **Tests:** 53 unit, 12 rules, 7 e2e. Tests need Java 21: set `JAVA_HOME` to
+- **Tests:** 53 unit, 12 rules, 8 e2e. Tests need Java 21: set `JAVA_HOME` to
   `C:Program FilesMicrosoftjdk-21.0.12.101-hotspot` if a terminal still picks up 17.
 - **Firebase:** the local emulators (`demo-ledgertrail`) are what `npm run dev` uses.
   The live project is `ledgertrailer` (alias `live`), with its web config in
