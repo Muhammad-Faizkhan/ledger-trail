@@ -38,8 +38,8 @@ type-check and `next build` clean.
    - Firebase project `ledgertrailer`: turn on **Blaze** (set a budget alert), create
      **Firestore** (production mode, location `asia-south1` suggested), enable
      **Email/Password** sign-in.
-   - Set the Cloud Functions region to match Firestore (currently the default,
-     `us-central1`; nothing sets a region in `functions/src/index.ts` yet).
+   - Done 2026-09-28: Firestore created in `asia-south1`, and the Cloud Functions
+     now use the same region (`REGION` in `functions/src/index.ts`).
    - `firebase deploy --project live` (rules, indexes, functions).
    - Deploy the Next.js app on **Vercel** with the `NEXT_PUBLIC_FIREBASE_*` values from
      `.env.production.local`, and `NEXT_PUBLIC_USE_EMULATORS` unset or `false`.

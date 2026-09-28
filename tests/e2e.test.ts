@@ -23,7 +23,7 @@ function client(name: string) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
   const db = getFirestore(app);
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
-  const fns = getFunctions(app);
+  const fns = getFunctions(app, "asia-south1");
   connectFunctionsEmulator(fns, "127.0.0.1", 5001);
   return { auth, db, fns };
 }

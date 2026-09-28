@@ -1,10 +1,16 @@
 import { createHash, randomBytes } from "node:crypto";
 import * as functionsV1 from "firebase-functions/v1";
+import { setGlobalOptions } from "firebase-functions/v2";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { FieldValue, getFirestore, type DocumentReference, type Transaction } from "firebase-admin/firestore";
 import { catalogKey, InputError, itemsText, parseOrderInput, type OrderInput } from "./orderInput";
+
+// Same region as the Firestore database. The web app, seed script and e2e tests
+// call functions in this region too: getFunctions(app, "asia-south1").
+const REGION = "asia-south1";
+setGlobalOptions({ region: REGION });
 
 initializeApp();
 const db = getFirestore();
@@ -16,7 +22,7 @@ const db = getFirestore();
  * Name/phone are filled in by the client afterwards (rules allow the owner
  * to update only those two fields).
  */
-export const provisionBusiness = functionsV1.auth.user().onCreate(async (user) => {
+export const provisionBusiness = functionsV1.region(REGION).auth.user().onCreate(async (user) => {
   const businessId = user.uid;
   const ref = db.doc(`businesses/${businessId}`);
   try {

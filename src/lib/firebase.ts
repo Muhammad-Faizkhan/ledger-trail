@@ -26,7 +26,7 @@ const fresh = getApps().length === 0;
 export const app = fresh ? initializeApp(config) : getApp();
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const functions = getFunctions(app);
+export const functions = getFunctions(app, "asia-south1"); // must match REGION in functions/src/index.ts
 
 if (usingEmulators && fresh) {
   // The emulators run on the dev machine. Reach them at whatever address the app
