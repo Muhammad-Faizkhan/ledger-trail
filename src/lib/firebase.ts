@@ -2,7 +2,6 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
 import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
-import { connectFunctionsEmulator, getFunctions } from "firebase/functions";
 
 // Each variable must be referenced literally so Next.js inlines it at build time.
 const config = {
@@ -26,7 +25,6 @@ const fresh = getApps().length === 0;
 export const app = fresh ? initializeApp(config) : getApp();
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const functions = getFunctions(app, "asia-south1"); // must match REGION in functions/src/index.ts
 
 if (usingEmulators && fresh) {
   // The emulators run on the dev machine. Reach them at whatever address the app
@@ -34,5 +32,4 @@ if (usingEmulators && fresh) {
   const host = typeof window === "undefined" ? "127.0.0.1" : window.location.hostname;
   connectAuthEmulator(auth, `http://${host}:9099`, { disableWarnings: true });
   connectFirestoreEmulator(db, host, 8080);
-  connectFunctionsEmulator(functions, host, 5001);
 }

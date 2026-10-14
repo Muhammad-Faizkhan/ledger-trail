@@ -2,6 +2,7 @@
 
 import { onAuthStateChanged, signOut as fbSignOut, type User } from "firebase/auth";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { callApi } from "./api";
 import { auth } from "./firebase";
 
 export type AuthState =
@@ -14,8 +15,6 @@ export type AuthState =
 
 const AuthContext = createContext<AuthState>({ status: "loading" });
 
-const CLAIM_POLL_MS = 500;
-const CLAIM_TIMEOUT_MS = 30_000;
 
 async function claimOf(user: User, forceRefresh: boolean): Promise<string | null> {
   const { claims } = await user.getIdTokenResult(forceRefresh);
@@ -38,13 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let businessId = await claimOf(user, false);
         if (!businessId) {
           if (current()) setState({ status: "provisioning", user });
-          // A brand-new signup: the claim lands a few seconds later, so keep
-          // forcing a token refresh until it shows up.
-          const deadline = Date.now() + CLAIM_TIMEOUT_MS;
-          while (!businessId && current() && Date.now() < deadline) {
-            await new Promise((r) => setTimeout(r, CLAIM_POLL_MS));
-            if (current()) businessId = await claimOf(user, true);
-          }
+          // A brand-new signup: have the server create the business and set
+          // the claim, then refresh the token so it carries the claim.
+          await callApi("provisionBusiness", null);
+          if (current()) businessId = await claimOf(user, true);
         }
         if (!current()) return;
         setState(

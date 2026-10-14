@@ -2,13 +2,13 @@
 
 // Every write the owner's UI makes. Edits to existing records go in a batch
 // with an auditLog entry per changed field, so history can't drift from data.
-// Orders go through Cloud Functions, which do the same on the server.
+// Orders go through the server (src/lib/server/ledger.ts), which does the same.
 import {
   addDoc, collection, doc, serverTimestamp, setDoc, updateDoc, writeBatch, type WriteBatch,
 } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
+import { callApi } from "@/lib/api";
 import { methodLabel } from "@/lib/derive";
-import { db, functions } from "@/lib/firebase";
+import { db } from "@/lib/firebase";
 import { money } from "@/lib/format";
 import type { AuditEntry, Order, Payment, PaymentMethod, Vendor } from "@/lib/types";
 
@@ -59,7 +59,7 @@ export async function editVendor(
 ) {
   const name = changes.name.trim();
   if (name !== vendor.name) {
-    await httpsCallable(functions, "renameVendor")({ vendorId: vendor.id, name });
+    await callApi("renameVendor", { vendorId: vendor.id, name });
   }
   const rest = { phone: changes.phone.trim(), notes: changes.notes.trim() };
   if (rest.phone !== vendor.phone || rest.notes !== vendor.notes) {
@@ -99,9 +99,8 @@ export function draftOf(o: Order): OrderDraft {
   };
 }
 
-export async function saveOrder(draft: OrderDraft): Promise<{ id: string; number: number }> {
-  const res = await httpsCallable<OrderDraft, { id: string; number: number }>(functions, "saveOrder")(draft);
-  return res.data;
+export function saveOrder(draft: OrderDraft): Promise<{ id: string; number: number }> {
+  return callApi<{ id: string; number: number }>("saveOrder", draft);
 }
 
 export function updateOrder(order: Order, changes: Partial<OrderDraft>) {
@@ -109,7 +108,7 @@ export function updateOrder(order: Order, changes: Partial<OrderDraft>) {
 }
 
 export async function deleteOrder(orderId: string) {
-  await httpsCallable(functions, "deleteOrder")({ orderId });
+  await callApi("deleteOrder", { orderId });
 }
 
 export interface NewPayment {
@@ -164,12 +163,12 @@ export async function deletePayment(businessId: string, uid: string, payment: Pa
 }
 
 export async function createVendorLink(vendorId: string): Promise<string> {
-  const res = await httpsCallable<{ vendorId: string }, { token: string }>(functions, "createVendorLink")({ vendorId });
-  return res.data.token;
+  const res = await callApi<{ token: string }>("createVendorLink", { vendorId });
+  return res.token;
 }
 
 export async function revokeVendorLink(vendorId: string) {
-  await httpsCallable(functions, "revokeVendorLink")({ vendorId });
+  await callApi("revokeVendorLink", { vendorId });
 }
 
 export const vendorLinkUrl = (token: string) => `${window.location.origin}/v/${token}`;

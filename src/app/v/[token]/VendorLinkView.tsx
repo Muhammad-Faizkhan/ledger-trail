@@ -1,14 +1,13 @@
 "use client";
 
-import { httpsCallable } from "firebase/functions";
 import { useEffect, useState } from "react";
+import { callApi } from "@/lib/api";
 import { methodLabel } from "@/lib/derive";
-import { functions } from "@/lib/firebase";
 import { amountsDiffer, APP_NAME, money, num, poNumber, round2 } from "@/lib/format";
 import type { Order, Payment } from "@/lib/types";
 import { Badge, Card, Centered, StatusBadge } from "../../_components/ui";
 
-// Shape returned by the resolveVendorLink Cloud Function.
+// Shape returned by resolveVendorLink (src/lib/server/ledger.ts).
 type LinkOrder = Pick<Order, "id" | "number" | "items" | "amount" | "orderDate" | "expectedDate" | "status" | "invoiceAmount" | "invoiceNo" | "invoiceDate" | "note">;
 type LinkPayment = Pick<Payment, "id" | "orderId" | "amount" | "method" | "date" | "bankRef" | "chequeNo" | "chequeBank" | "chequeDate" | "clearedStatus">;
 interface LinkData {
@@ -25,8 +24,8 @@ export function VendorLinkView({ token }: { token: string }) {
 
   useEffect(() => {
     let live = true;
-    httpsCallable<{ token: string }, LinkData>(functions, "resolveVendorLink")({ token })
-      .then((res) => live && setState({ status: "ready", data: res.data }))
+    callApi<LinkData>("resolveVendorLink", { token })
+      .then((data) => live && setState({ status: "ready", data }))
       .catch((err: { code?: string; message: string }) => live && setState({
         status: "error",
         message: err.code === "functions/not-found" ? err.message : "Couldn't load this page. Try again later.",
